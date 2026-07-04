@@ -70,6 +70,56 @@ The MVP uses Streamlit, Python, and Cognee so the demo can make the memory lifec
 - Improve memory from feedback.
 - Forget a late-night window.
 
+## Hackathon Submission
+
+BlackOut is a hackathon project built with Streamlit, Python, and Cognee that makes the Cognee Memory Lifecycle visible through a late-night decision review app.
+
+The narrative is built around three jobs:
+
+1. **Reconstruct** what happened in the most recent late-night window.
+2. **Recognize** patterns from previous late-night windows.
+3. **Repair** memory with feedback or forgetting.
+
+### Demo Path
+
+The fastest way to see the full product is:
+
+1. Run `python3 -m streamlit run app.py`.
+2. Click **Load Seed Demo Mode** — three Late-Night Windows load and Morning-After Recall runs automatically.
+3. Review the Decision timeline with timestamps, categories, regret signals, and Evidence Excerpts.
+4. Notice Pattern insights connecting current decisions to prior windows.
+5. Apply a Feedback Label (Regret, Fine, Funny, Worth it) to any Decision.
+6. Expand Ask Your Memory and ask a follow-up question.
+7. Forget the entire Late-Night Window to see privacy controls in action.
+
+No personal accounts, phone connections, email access, shopping integrations, or OAuth are required. The demo runs entirely on pasted text evidence and the seeded dataset.
+
+Screenshot and image support is a secondary evidence path planned for a future release.
+
+### Technology
+
+- **Streamlit** for the UI.
+- **Python** for the workflow and evidence extraction.
+- **Cognee** for the real memory adapter behind the same seam as the fake adapter used in tests and demos.
+
+### Environment Variables
+
+Set these to enable real Cognee memory (values are secrets — never commit them):
+
+| Variable | Purpose |
+|---|---|
+| `BLACKOUT_MEMORY_ADAPTER` | Set to `cognee` to use real memory; defaults to `fake` |
+| `COGNEE_BASE_URL` | Cognee instance URL |
+| `COGNEE_API_KEY` | Cognee API key |
+| `LLM_API_KEY` | LLM provider key used by Cognee |
+
+Optional:
+
+| Variable | Purpose |
+|---|---|
+| `BLACKOUT_COGNEE_DATASET_PREFIX` | Prefix for Cognee dataset names |
+| `BLACKOUT_RUN_COGNEE_SMOKE` | Set to `1` to run the live Cognee smoke test |
+
 ## How It Works
 
 Streamlit does not own the product behavior directly. It calls `BlackOutWorkflow`, which is the main interface for product actions.
@@ -123,10 +173,10 @@ The fake memory adapter records every improve-memory call for tests. It also att
 
 The real Cognee adapter maps the visible Memory Lifecycle to Cognee calls:
 
-- Remember Evidence by adding a Late-Night Window document to a separable Cognee dataset and running cognify.
-- Recall Morning-After Recall context through Cognee search while returning the structured Recall Result the app displays.
-- Answer Ask Your Memory through Cognee search and grounded Evidence Excerpts.
-- Improve memory from Feedback Labels by adding feedback context and calling improve.
+- Remember Evidence by adding structured BlackOut records to Cognee datasets and running cognify.
+- Recall Morning-After Recall by searching Cognee for the saved BlackOut window index and Late-Night Window records, then returning the structured Recall Result the app displays.
+- Answer Ask Your Memory by searching Cognee for saved memory records and grounding answers in Evidence Excerpts.
+- Improve memory from Feedback Labels by adding feedback context and calling Cognee memify/improve.
 - Forget a Late-Night Window by deleting that window's Cognee dataset.
 
 The Recall Result also exposes the MVP Forget Scope: one complete Late-Night Window. After the user confirms the action, Streamlit routes the forget request through `BlackOutWorkflow`, the memory adapter forgets that window as a separable remembered unit, and the next Morning-After Recall excludes its Evidence and Decisions.
@@ -151,8 +201,12 @@ By default, BlackOut uses the fake adapter. To enable real Cognee memory, config
 
 ```bash
 export BLACKOUT_MEMORY_ADAPTER=cognee
+export COGNEE_BASE_URL=...
+export COGNEE_API_KEY=...
 export LLM_API_KEY=...
 ```
+
+The Streamlit app also checks `~/.bashrc` for those same `export NAME=...` lines when they are missing from the process environment. This is only a local convenience for configured development machines; the values are not printed or written into the repo.
 
 Optional environment variables:
 
@@ -161,7 +215,7 @@ export BLACKOUT_COGNEE_DATASET_PREFIX=blackout
 export BLACKOUT_RUN_COGNEE_SMOKE=1
 ```
 
-`LLM_API_KEY` is read from the environment only. Do not put secret values in tracked files.
+`COGNEE_API_KEY` and `LLM_API_KEY` are read from the environment only. Do not put secret values in tracked files.
 
 Run the Streamlit app:
 

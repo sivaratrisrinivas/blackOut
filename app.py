@@ -10,7 +10,9 @@ from blackout.workflow import FEEDBACK_LABELS, BlackOutWorkflow
 def build_workflow() -> BlackOutWorkflow:
     if "memory_adapter" not in st.session_state:
         try:
-            st.session_state["memory_adapter"] = build_memory_adapter_from_env()
+            st.session_state["memory_adapter"] = build_memory_adapter_from_env(
+                load_shell_exports=True
+            )
         except CogneeConfigurationError as error:
             st.error(str(error))
             st.stop()
@@ -20,6 +22,14 @@ def build_workflow() -> BlackOutWorkflow:
 
 st.set_page_config(page_title="BlackOut")
 st.title("BlackOut")
+st.markdown(
+    "Late-night decisions, morning clarity. "
+    "**Reconstruct** what happened, **Recognize** patterns, **Repair** memory."
+)
+st.caption(
+    "Paste text or load the demo to get started. "
+    "Screenshot support coming soon as a secondary evidence path."
+)
 
 workflow = build_workflow()
 
@@ -48,6 +58,8 @@ if st.button("Remember Pasted Evidence"):
 
 if st.button("Load Seed Demo Mode"):
     seed_result = workflow.load_seed_demo_dataset()
+    st.session_state["recall_result"] = workflow.morning_after_recall()
+    st.session_state.pop("ask_memory_result", None)
     st.success(
         f"Loaded {seed_result.loaded_window_count} separable Late-Night Windows."
     )
