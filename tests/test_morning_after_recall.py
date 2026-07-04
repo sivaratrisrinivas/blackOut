@@ -301,3 +301,55 @@ def test_workflow_returns_an_empty_recall_result_when_all_windows_are_forgotten(
     assert updated_result.timeline == []
     assert updated_result.pattern_insights == []
     assert updated_result.raw_evidence == []
+
+
+def test_workflow_exposes_suggested_ask_your_memory_prompts():
+    workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
+
+    prompts = workflow.suggested_ask_memory_prompts()
+
+    assert prompts == [
+        "What did I buy after midnight?",
+        "Did I message anyone emotionally risky?",
+        "What should I cancel today?",
+    ]
+
+
+def test_workflow_answers_a_freeform_ask_your_memory_question_through_memory():
+    memory = FakeMemoryAdapter()
+    workflow = BlackOutWorkflow(memory=memory)
+
+    workflow.load_seed_demo_dataset(
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30")
+    )
+
+    answer = workflow.ask_your_memory("What did I buy after midnight?")
+
+    assert memory.ask_memory_calls == ["What did I buy after midnight?"]
+    assert answer.question == "What did I buy after midnight?"
+    assert answer.answer == (
+        "You bought espresso machine from BeanForge at 03:12 for $249."
+    )
+    assert answer.evidence == [
+        "03:12 - BeanForge receipt: espresso machine, $249.",
+    ]
+
+
+def test_ask_your_memory_respects_forgotten_late_night_windows():
+    workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
+
+    workflow.load_seed_demo_dataset(
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30")
+    )
+    result = workflow.morning_after_recall()
+
+    workflow.forget_late_night_window(result.late_night_window)
+    answer = workflow.ask_your_memory("What did I buy after midnight?")
+
+    assert "espresso machine" not in answer.answer
+    assert answer.answer == (
+        "You bought premium grinder from BeanForge at 02:58 for $179."
+    )
+    assert answer.evidence == [
+        "02:58 - BeanForge receipt: premium grinder, $179.",
+    ]

@@ -51,6 +51,7 @@ if st.button("Load Seed Demo Mode"):
 
 if st.button("What did I do last night?", type="primary"):
     st.session_state["recall_result"] = workflow.morning_after_recall()
+    st.session_state.pop("ask_memory_result", None)
 
 if "recall_result" in st.session_state:
     result = st.session_state["recall_result"]
@@ -72,6 +73,7 @@ if "recall_result" in st.session_state:
     )
     if st.button(
         "Forget this Late-Night Window",
+        key="forget-current-window",
         disabled=not can_forget_window or not confirm_forget,
         type="secondary",
     ):
@@ -79,6 +81,7 @@ if "recall_result" in st.session_state:
         st.session_state["recall_result"] = workflow.forget_late_night_window(
             forgotten_window
         )
+        st.session_state.pop("ask_memory_result", None)
         st.session_state["forget_confirmation"] = (
             f"Forgot Late-Night Window: {forgotten_window.starts_at} to "
             f"{forgotten_window.ends_at}."
@@ -138,6 +141,33 @@ if "recall_result" in st.session_state:
                         "Memory updated. Prior pattern filed with nuance."
                     )
                     st.rerun()
+
+    st.subheader("Ask Your Memory")
+    suggested_prompts = workflow.suggested_ask_memory_prompts()
+    prompt_columns = st.columns(len(suggested_prompts))
+    for prompt_index, (prompt, column) in enumerate(
+        zip(suggested_prompts, prompt_columns)
+    ):
+        if column.button(prompt, key=f"ask-prompt-{prompt_index}"):
+            st.session_state["ask_memory_result"] = workflow.ask_your_memory(prompt)
+
+    ask_question = st.text_input(
+        "Ask a question",
+        placeholder="What did I buy after midnight?",
+    )
+    if st.button("Ask Your Memory"):
+        if ask_question.strip():
+            st.session_state["ask_memory_result"] = workflow.ask_your_memory(
+                ask_question.strip()
+            )
+        else:
+            st.warning("Ask a question before querying memory.")
+
+    if "ask_memory_result" in st.session_state:
+        ask_result = st.session_state["ask_memory_result"]
+        st.markdown(ask_result.answer)
+        for evidence in ask_result.evidence:
+            st.code(evidence)
 
     with st.expander("Raw evidence"):
         for evidence in result.raw_evidence:

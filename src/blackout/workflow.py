@@ -20,6 +20,11 @@ DECISION_CATEGORIES = {
     "other",
 }
 FEEDBACK_LABELS = ("Regret", "Fine", "Funny", "Worth it")
+ASK_YOUR_MEMORY_PROMPTS = (
+    "What did I buy after midnight?",
+    "Did I message anyone emotionally risky?",
+    "What should I cancel today?",
+)
 _EVIDENCE_LINE = re.compile(r"^(?P<timestamp>\d{2}:\d{2}) - (?P<source>[^:]+): (?P<body>.+)$")
 _AMOUNT = re.compile(r"\$\d+(?:\.\d{2})?")
 
@@ -67,6 +72,13 @@ class RecallResult:
 
 
 @dataclass(frozen=True)
+class AskMemoryResult:
+    question: str
+    answer: str
+    evidence: list[str]
+
+
+@dataclass(frozen=True)
 class RememberCall:
     window: LateNightWindow
     primary_demo_evidence: str
@@ -93,6 +105,9 @@ class MemoryAdapter(Protocol):
     def recall_morning_after(self) -> RecallResult:
         pass
 
+    def ask_memory(self, question: str) -> AskMemoryResult:
+        pass
+
     def improve_decision_memory(
         self, decision: Decision, feedback_label: FeedbackLabel
     ) -> None:
@@ -107,6 +122,7 @@ class FakeMemoryAdapter:
         self.remember_calls: list[RememberCall] = []
         self.improve_calls: list[ImproveMemoryCall] = []
         self.forget_calls: list[LateNightWindow] = []
+        self.ask_memory_calls: list[str] = []
         self._feedback_by_evidence_excerpt: dict[str, FeedbackLabel] = {}
         self._forgotten_memory_keys: set[str] = set()
 
@@ -194,6 +210,38 @@ class FakeMemoryAdapter:
             raw_evidence=raw_evidence,
         )
 
+    def ask_memory(self, question: str) -> AskMemoryResult:
+        self.ask_memory_calls.append(question)
+        remembered_decisions = self._remembered_decisions()
+        question_lower = question.lower()
+
+        if "buy" in question_lower or "bought" in question_lower:
+            decisions = [
+                decision
+                for decision in remembered_decisions
+                if decision.category == "purchase"
+            ]
+            return _ask_memory_result_for(question, decisions)
+
+        if "emotion" in question_lower or "message" in question_lower:
+            decisions = [
+                decision
+                for decision in remembered_decisions
+                if decision.category == "message" and decision.regret_signals
+            ]
+            return _ask_memory_result_for(question, decisions)
+
+        if "cancel" in question_lower:
+            decisions = [
+                decision
+                for decision in remembered_decisions
+                if decision.category == "subscription"
+                or any("cancel" in signal for signal in decision.regret_signals)
+            ]
+            return _ask_memory_result_for(question, decisions)
+
+        return _ask_memory_result_for(question, remembered_decisions)
+
     def improve_decision_memory(
         self, decision: Decision, feedback_label: FeedbackLabel
     ) -> None:
@@ -213,6 +261,25 @@ class FakeMemoryAdapter:
             self._with_feedback(decision)
             for decision in _decisions_from_evidence(primary_demo_evidence)
         ]
+
+    def _remembered_decisions(self) -> list[Decision]:
+        remembered_calls = [
+            call
+            for call in self.remember_calls
+            if call.window.memory_key not in self._forgotten_memory_keys
+        ]
+        if not remembered_calls:
+            return []
+
+        _, remembered_window = max(
+            enumerate(remembered_calls),
+            key=lambda indexed_call: (
+                indexed_call[1].window.starts_at,
+                indexed_call[0],
+            ),
+        )
+
+        return self._decisions_with_feedback(remembered_window.primary_demo_evidence)
 
     def _with_feedback(self, decision: Decision) -> Decision:
         feedback_label = self._feedback_by_evidence_excerpt.get(
@@ -276,6 +343,12 @@ class BlackOutWorkflow:
 
     def morning_after_recall(self) -> RecallResult:
         return self._memory.recall_morning_after()
+
+    def suggested_ask_memory_prompts(self) -> list[str]:
+        return list(ASK_YOUR_MEMORY_PROMPTS)
+
+    def ask_your_memory(self, question: str) -> AskMemoryResult:
+        return self._memory.ask_memory(question)
 
     def apply_feedback_label(
         self, decision: Decision, feedback_label: FeedbackLabel
@@ -413,6 +486,41 @@ def _pattern_status_for(decision: Decision, related: list[Decision]) -> str:
     ):
         return "confirmed regret"
     return "possible risk"
+
+
+def _ask_memory_result_for(question: str, decisions: list[Decision]) -> AskMemoryResult:
+    if not decisions:
+        return AskMemoryResult(
+            question=question,
+            answer="I could not find remembered Decisions for that question.",
+            evidence=[],
+        )
+
+    decision_summaries = [_ask_memory_sentence_for(decision) for decision in decisions]
+    return AskMemoryResult(
+        question=question,
+        answer=" ".join(decision_summaries),
+        evidence=[decision.evidence_excerpt.text for decision in decisions],
+    )
+
+
+def _ask_memory_sentence_for(decision: Decision) -> str:
+    subject = decision.summary
+    if subject.startswith("Bought "):
+        subject = subject.removeprefix("Bought ")
+        sentence = f"You bought {subject} at {decision.timestamp}"
+    elif subject.startswith("Texted "):
+        subject = subject.removeprefix("Texted ")
+        sentence = f"You texted {subject} at {decision.timestamp}"
+    elif subject.startswith("Flagged subscription follow-up: "):
+        subject = subject.removeprefix("Flagged subscription follow-up: ")
+        sentence = f"You flagged this to cancel today: {subject} at {decision.timestamp}"
+    else:
+        sentence = f"{decision.summary} at {decision.timestamp}"
+
+    if decision.amount:
+        sentence = f"{sentence} for {decision.amount}"
+    return f"{sentence}."
 
 
 def _decision_from_evidence_line(line: str) -> Decision:

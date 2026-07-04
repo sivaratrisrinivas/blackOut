@@ -38,7 +38,11 @@ Today, the app can:
 - Label Pattern insights as possible risk until the user marks a related Decision as Regret.
 - Let the user apply one of four Feedback Labels to a Decision: Regret, Fine, Funny, or Worth it.
 - Improve remembered Decisions from feedback so future recall can show the user's actual judgment.
+- Let the user ask a freeform Ask Your Memory question after Morning-After Recall.
+- Offer suggested Ask Your Memory prompts for purchases after midnight, emotionally risky messages, and things to cancel today.
+- Answer Ask Your Memory questions with plain-English answers grounded in remembered Decisions and Evidence Excerpts.
 - Forget an entire Late-Night Window after confirmation, removing that window from future recall.
+- Keep forgotten Late-Night Windows out of both Morning-After Recall and Ask Your Memory answers.
 - Keep raw Evidence behind a collapsible provenance section instead of making it the main result.
 - Run deterministically with a fake memory adapter for tests and demos.
 
@@ -53,6 +57,8 @@ The main idea is simple: show actions and commitments first, not a pile of raw t
 Pattern insights matter because repeat behavior is often the useful part of memory. A single late-night purchase might be fine. Seeing that it looks like a previous late-night purchase gives the user better context without calling it a mistake.
 
 Feedback Labels matter because BlackOut should not pretend every late-night Decision is a problem. Regret teaches the memory layer to treat similar future Decisions more seriously. Fine, Funny, and Worth it let the user say, in plain terms, that a strange-looking Decision was harmless, amusing, or actually a good call.
+
+Ask Your Memory matters because the default timeline cannot predict every question a user wakes up with. The timeline stays first, but the user can ask a targeted follow-up such as what they bought after midnight, whether an emotionally loaded message showed up, or what they should cancel today. The answer stays grounded in remembered Decisions and Evidence instead of becoming a generic chatbot response.
 
 Forgetting matters because some remembered evidence is sensitive. The MVP keeps the privacy control simple: the user forgets one whole Late-Night Window, not individual lines, so the app can remove that night cleanly and confirm what happened.
 
@@ -95,6 +101,20 @@ After the timeline, Morning-After Recall compares current Decisions with prior r
 - Compact related prior Decisions, such as timestamp, summary, vendor or person, and amount when available.
 
 The app shows those Pattern insights before raw Evidence. This gives the user enough context to recognize the pattern without exposing full prior transcripts by default.
+
+Ask Your Memory appears after the Recall Result, so it stays secondary to the main Morning-After Recall action. The workflow exposes three suggested prompts:
+
+- What did I buy after midnight?
+- Did I message anyone emotionally risky?
+- What should I cancel today?
+
+The user can also type a freeform question. Streamlit sends both suggested prompts and typed questions through `BlackOutWorkflow`, and the workflow asks the memory adapter for an answer. The fake adapter records the question for tests, finds matching remembered Decisions in the active Late-Night Window, and returns:
+
+- The original question.
+- A short user-facing answer.
+- The Evidence Excerpts that ground the answer.
+
+If a Late-Night Window has been forgotten, Ask Your Memory uses the same forgotten-window state as Morning-After Recall, so deleted Evidence is not shown again in an answer.
 
 Each recalled Decision now includes Feedback Label actions. When the user marks a Decision as Regret, Fine, Funny, or Worth it, Streamlit sends that choice back through `BlackOutWorkflow`. The workflow records the label through the memory adapter and returns an updated Recall Result, so the page can keep the timeline, Pattern insights, and raw Evidence in place.
 
