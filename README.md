@@ -35,7 +35,9 @@ Today, the app can:
 - Reconstruct the most recent Late-Night Window into a Decision timeline.
 - Show each Decision with a timestamp, category, source type, people or vendors, amount, neutral regret signals, and an Evidence Excerpt when those details are available.
 - Compare the most recent Late-Night Window with prior remembered windows and show similar prior Decisions as Pattern insights.
-- Label Pattern insights as possible risk, not confirmed regret, so the app stays useful without overstating what it knows.
+- Label Pattern insights as possible risk until the user marks a related Decision as Regret.
+- Let the user apply one of four Feedback Labels to a Decision: Regret, Fine, Funny, or Worth it.
+- Improve remembered Decisions from feedback so future recall can show the user's actual judgment.
 - Keep raw Evidence behind a collapsible provenance section instead of making it the main result.
 - Run deterministically with a fake memory adapter for tests and demos.
 
@@ -48,6 +50,8 @@ BlackOut is meant to make that review fast and humane. It is not trying to diagn
 The main idea is simple: show actions and commitments first, not a pile of raw text. A user should be able to scan the timeline, notice whether anything resembles a prior late-night pattern, and quickly understand what happened.
 
 Pattern insights matter because repeat behavior is often the useful part of memory. A single late-night purchase might be fine. Seeing that it looks like a previous late-night purchase gives the user better context without calling it a mistake.
+
+Feedback Labels matter because BlackOut should not pretend every late-night Decision is a problem. Regret teaches the memory layer to treat similar future Decisions more seriously. Fine, Funny, and Worth it let the user say, in plain terms, that a strange-looking Decision was harmless, amusing, or actually a good call.
 
 The MVP uses Streamlit, Python, and Cognee so the demo can make the memory lifecycle visible:
 
@@ -88,6 +92,10 @@ After the timeline, Morning-After Recall compares current Decisions with prior r
 - Compact related prior Decisions, such as timestamp, summary, vendor or person, and amount when available.
 
 The app shows those Pattern insights before raw Evidence. This gives the user enough context to recognize the pattern without exposing full prior transcripts by default.
+
+Each recalled Decision now includes Feedback Label actions. When the user marks a Decision as Regret, Fine, Funny, or Worth it, Streamlit sends that choice back through `BlackOutWorkflow`. The workflow records the label through the memory adapter and returns an updated Recall Result, so the page can keep the timeline, Pattern insights, and raw Evidence in place.
+
+The fake memory adapter records every improve-memory call for tests. It also attaches the latest Feedback Label to matching recalled Decisions. If a current Pattern insight is related to a Decision marked Regret, the insight changes from possible risk to confirmed regret. Other labels are still remembered, but they do not turn a pattern into confirmed regret.
 
 The current extraction is intentionally narrow and demo-friendly. It reads timestamped text lines such as receipts, messages, notes, tasks, calendar entries, and commits, then turns them into the MVP Decision shape. The real Cognee adapter will later sit behind the same workflow and memory adapter seam.
 

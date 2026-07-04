@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from typing import Protocol
 
@@ -9,6 +9,7 @@ from blackout.seed_demo import SEED_DEMO_WINDOWS
 
 
 DecisionCategory = str
+FeedbackLabel = str
 DECISION_CATEGORIES = {
     "purchase",
     "message",
@@ -18,6 +19,7 @@ DECISION_CATEGORIES = {
     "subscription",
     "other",
 }
+FEEDBACK_LABELS = ("Regret", "Fine", "Funny", "Worth it")
 _EVIDENCE_LINE = re.compile(r"^(?P<timestamp>\d{2}:\d{2}) - (?P<source>[^:]+): (?P<body>.+)$")
 _AMOUNT = re.compile(r"\$\d+(?:\.\d{2})?")
 
@@ -45,6 +47,7 @@ class Decision:
     amount: str | None
     regret_signals: list[str]
     evidence_excerpt: EvidenceExcerpt
+    feedback_label: FeedbackLabel | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +73,12 @@ class RememberCall:
 
 
 @dataclass(frozen=True)
+class ImproveMemoryCall:
+    decision: Decision
+    feedback_label: FeedbackLabel
+
+
+@dataclass(frozen=True)
 class SeedDemoLoadResult:
     loaded_window_count: int
     most_recent_window: LateNightWindow
@@ -84,10 +93,17 @@ class MemoryAdapter(Protocol):
     def recall_morning_after(self) -> RecallResult:
         pass
 
+    def improve_decision_memory(
+        self, decision: Decision, feedback_label: FeedbackLabel
+    ) -> None:
+        pass
+
 
 class FakeMemoryAdapter:
     def __init__(self) -> None:
         self.remember_calls: list[RememberCall] = []
+        self.improve_calls: list[ImproveMemoryCall] = []
+        self._feedback_by_evidence_excerpt: dict[str, FeedbackLabel] = {}
 
     def remember_late_night_window(
         self, window: LateNightWindow, primary_demo_evidence: str
@@ -103,15 +119,17 @@ class FakeMemoryAdapter:
         if not self.remember_calls:
             evidence = "03:12 - BeanForge receipt: espresso machine, $249"
 
-            decision = Decision(
-                timestamp="03:12",
-                summary="Bought a 3am espresso machine",
-                category="purchase",
-                source_type="receipt",
-                people_or_vendors=["BeanForge"],
-                amount="$249",
-                regret_signals=["high spend after midnight"],
-                evidence_excerpt=EvidenceExcerpt(text=evidence),
+            decision = self._with_feedback(
+                Decision(
+                    timestamp="03:12",
+                    summary="Bought a 3am espresso machine",
+                    category="purchase",
+                    source_type="receipt",
+                    people_or_vendors=["BeanForge"],
+                    amount="$249",
+                    regret_signals=["high spend after midnight"],
+                    evidence_excerpt=EvidenceExcerpt(text=evidence),
+                )
             )
 
             return RecallResult(
@@ -134,12 +152,15 @@ class FakeMemoryAdapter:
             ),
         )
         raw_evidence = _evidence_lines(remembered_window.primary_demo_evidence)
-        timeline = [_decision_from_evidence_line(line) for line in raw_evidence]
+        timeline = [
+            self._with_feedback(_decision_from_evidence_line(line))
+            for line in raw_evidence
+        ]
         prior_decisions = [
             decision
             for call_index, call in enumerate(self.remember_calls)
             if call_index != remembered_index
-            for decision in _decisions_from_evidence(call.primary_demo_evidence)
+            for decision in self._decisions_with_feedback(call.primary_demo_evidence)
         ]
 
         return RecallResult(
@@ -148,6 +169,30 @@ class FakeMemoryAdapter:
             pattern_insights=_pattern_insights_for(timeline, prior_decisions),
             raw_evidence=raw_evidence,
         )
+
+    def improve_decision_memory(
+        self, decision: Decision, feedback_label: FeedbackLabel
+    ) -> None:
+        self.improve_calls.append(
+            ImproveMemoryCall(decision=decision, feedback_label=feedback_label)
+        )
+        self._feedback_by_evidence_excerpt[
+            decision.evidence_excerpt.text
+        ] = feedback_label
+
+    def _decisions_with_feedback(self, primary_demo_evidence: str) -> list[Decision]:
+        return [
+            self._with_feedback(decision)
+            for decision in _decisions_from_evidence(primary_demo_evidence)
+        ]
+
+    def _with_feedback(self, decision: Decision) -> Decision:
+        feedback_label = self._feedback_by_evidence_excerpt.get(
+            decision.evidence_excerpt.text
+        )
+        if feedback_label is None:
+            return decision
+        return replace(decision, feedback_label=feedback_label)
 
 
 class BlackOutWorkflow:
@@ -202,6 +247,20 @@ class BlackOutWorkflow:
         return window
 
     def morning_after_recall(self) -> RecallResult:
+        return self._memory.recall_morning_after()
+
+    def apply_feedback_label(
+        self, decision: Decision, feedback_label: FeedbackLabel
+    ) -> RecallResult:
+        if feedback_label not in FEEDBACK_LABELS:
+            raise ValueError(
+                "Feedback Label must be one of Regret, Fine, Funny, or Worth it."
+            )
+
+        self._memory.improve_decision_memory(
+            decision=decision,
+            feedback_label=feedback_label,
+        )
         return self._memory.recall_morning_after()
 
 
@@ -278,7 +337,7 @@ def _pattern_insights_for(
         if related:
             insights.append(
                 PatternInsight(
-                    status="possible risk",
+                    status=_pattern_status_for(decision, related),
                     summary=_pattern_summary_for(decision, related),
                     current_decision=decision,
                     related_prior_decisions=related,
@@ -314,6 +373,14 @@ def _pattern_summary_for(decision: Decision, related: list[Decision]) -> str:
         f"Similar {decision.category} Decisions appeared in this "
         "Late-Night Window and prior ones."
     )
+
+
+def _pattern_status_for(decision: Decision, related: list[Decision]) -> str:
+    if decision.feedback_label == "Regret" or any(
+        prior.feedback_label == "Regret" for prior in related
+    ):
+        return "confirmed regret"
+    return "possible risk"
 
 
 def _decision_from_evidence_line(line: str) -> Decision:

@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pytest
+
 from blackout.workflow import BlackOutWorkflow, FakeMemoryAdapter
 
 
@@ -134,3 +136,96 @@ def test_morning_after_recall_uses_the_memory_lifecycle_seam():
     workflow.morning_after_recall()
 
     assert memory.recall_count == 1
+
+
+def test_workflow_applies_regret_feedback_and_improves_memory_without_losing_recall_context():
+    memory = FakeMemoryAdapter()
+    workflow = BlackOutWorkflow(memory=memory)
+
+    workflow.load_seed_demo_dataset(
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30")
+    )
+    result = workflow.morning_after_recall()
+    decision = next(
+        decision
+        for decision in result.timeline
+        if decision.summary == "Bought espresso machine from BeanForge"
+    )
+
+    updated_result = workflow.apply_feedback_label(decision, "Regret")
+
+    updated_decision = next(
+        decision
+        for decision in updated_result.timeline
+        if decision.summary == "Bought espresso machine from BeanForge"
+    )
+    assert updated_decision.feedback_label == "Regret"
+    assert updated_result.late_night_window == result.late_night_window
+    assert updated_result.raw_evidence == result.raw_evidence
+    assert [call.feedback_label for call in memory.improve_calls] == ["Regret"]
+
+
+@pytest.mark.parametrize("feedback_label", ["Regret", "Fine", "Funny", "Worth it"])
+def test_workflow_applies_each_feedback_label_and_records_memory_improvement(
+    feedback_label,
+):
+    memory = FakeMemoryAdapter()
+    workflow = BlackOutWorkflow(memory=memory)
+
+    workflow.load_seed_demo_dataset(
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30")
+    )
+    result = workflow.morning_after_recall()
+    decision = result.timeline[0]
+
+    updated_result = workflow.apply_feedback_label(decision, feedback_label)
+
+    updated_decision = next(
+        remembered_decision
+        for remembered_decision in updated_result.timeline
+        if remembered_decision.evidence_excerpt == decision.evidence_excerpt
+    )
+    assert updated_decision.feedback_label == feedback_label
+    assert len(memory.improve_calls) == 1
+    assert memory.improve_calls[0].decision == decision
+    assert memory.improve_calls[0].feedback_label == feedback_label
+
+
+def test_pattern_insights_distinguish_confirmed_regret_after_feedback():
+    workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
+
+    workflow.load_seed_demo_dataset(
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30")
+    )
+    result = workflow.morning_after_recall()
+    insight = next(
+        pattern
+        for pattern in result.pattern_insights
+        if pattern.current_decision.summary == "Bought espresso machine from BeanForge"
+    )
+    prior_purchase = insight.related_prior_decisions[0]
+
+    updated_result = workflow.apply_feedback_label(prior_purchase, "Regret")
+
+    updated_insight = next(
+        pattern
+        for pattern in updated_result.pattern_insights
+        if pattern.current_decision.summary == "Bought espresso machine from BeanForge"
+    )
+    assert updated_insight.status == "confirmed regret"
+    assert updated_insight.related_prior_decisions[0].feedback_label == "Regret"
+
+
+def test_workflow_rejects_feedback_labels_outside_the_mvp_set():
+    memory = FakeMemoryAdapter()
+    workflow = BlackOutWorkflow(memory=memory)
+
+    workflow.load_seed_demo_dataset(
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30")
+    )
+    decision = workflow.morning_after_recall().timeline[0]
+
+    with pytest.raises(ValueError, match="Regret, Fine, Funny, or Worth it"):
+        workflow.apply_feedback_label(decision, "Shame Spiral")
+
+    assert memory.improve_calls == []
