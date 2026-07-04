@@ -22,11 +22,18 @@ The main product action is Morning-After Recall, shown in the app as:
 What did I do last night?
 ```
 
-The first implementation includes a runnable tracer bullet with:
+The app also has Seed Demo Mode. It loads three prepared Late-Night Windows so the demo can show a full memory flow without relying on live personal data:
+
+- The most recent completed midnight-through-5:00am window.
+- A prior impulse-purchase pattern window.
+- A prior emotional-message pattern window.
+
+The current implementation includes:
 
 - A Streamlit app.
 - A `BlackOutWorkflow` product seam.
 - Typed domain objects for Late-Night Window, Decision, Regret Signal, Evidence Excerpt, and Recall Result.
+- Seed Demo Mode that remembers three separable Late-Night Windows from committed Primary Demo Evidence.
 - A deterministic fake memory adapter for tests and demos.
 - A Recall Result layout with timeline first, pattern insights second, and raw evidence tucked behind an expander.
 
@@ -47,9 +54,18 @@ The MVP uses Streamlit, Python, and Cognee so the demo can make the memory lifec
 
 Streamlit does not own the product behavior directly. It calls `BlackOutWorkflow`, which is the main interface for product actions.
 
-The workflow talks to a memory adapter. Today the repo includes a fake adapter so the first slice is deterministic and testable. A real Cognee adapter is planned as the next memory implementation behind the same seam.
+The workflow talks to a memory adapter. Today the repo includes a fake adapter so the first slices are deterministic and testable. A real Cognee adapter is planned as the next memory implementation behind the same seam.
 
-The current tracer bullet returns one deterministic Recall Result:
+When the user clicks Seed Demo Mode, the workflow:
+
+1. Finds the most recent completed Late-Night Window using the user's local time.
+2. Builds three dated Late-Night Windows from the seed dataset.
+3. Sends each window to the memory adapter as its own remembered unit.
+4. Confirms that all three windows were loaded.
+
+Each window is remembered as a separable unit so a later Forget Scope action can remove one complete Late-Night Window.
+
+The current recall tracer bullet returns one deterministic Recall Result:
 
 - A late-night purchase decision.
 - A neutral regret signal.
