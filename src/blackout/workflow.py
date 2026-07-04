@@ -98,16 +98,22 @@ class MemoryAdapter(Protocol):
     ) -> None:
         pass
 
+    def forget_late_night_window(self, window: LateNightWindow) -> None:
+        pass
+
 
 class FakeMemoryAdapter:
     def __init__(self) -> None:
         self.remember_calls: list[RememberCall] = []
         self.improve_calls: list[ImproveMemoryCall] = []
+        self.forget_calls: list[LateNightWindow] = []
         self._feedback_by_evidence_excerpt: dict[str, FeedbackLabel] = {}
+        self._forgotten_memory_keys: set[str] = set()
 
     def remember_late_night_window(
         self, window: LateNightWindow, primary_demo_evidence: str
     ) -> None:
+        self._forgotten_memory_keys.discard(window.memory_key)
         self.remember_calls.append(
             RememberCall(
                 window=window,
@@ -116,6 +122,11 @@ class FakeMemoryAdapter:
         )
 
     def recall_morning_after(self) -> RecallResult:
+        remembered_calls = [
+            call
+            for call in self.remember_calls
+            if call.window.memory_key not in self._forgotten_memory_keys
+        ]
         if not self.remember_calls:
             evidence = "03:12 - BeanForge receipt: espresso machine, $249"
 
@@ -144,8 +155,21 @@ class FakeMemoryAdapter:
                 raw_evidence=[evidence],
             )
 
+        if not remembered_calls:
+            return RecallResult(
+                late_night_window=LateNightWindow(
+                    label="No remembered Late-Night Window",
+                    starts_at="",
+                    ends_at="",
+                    memory_key="late-night-window:none",
+                ),
+                timeline=[],
+                pattern_insights=[],
+                raw_evidence=[],
+            )
+
         remembered_index, remembered_window = max(
-            enumerate(self.remember_calls),
+            enumerate(remembered_calls),
             key=lambda indexed_call: (
                 indexed_call[1].window.starts_at,
                 indexed_call[0],
@@ -158,7 +182,7 @@ class FakeMemoryAdapter:
         ]
         prior_decisions = [
             decision
-            for call_index, call in enumerate(self.remember_calls)
+            for call_index, call in enumerate(remembered_calls)
             if call_index != remembered_index
             for decision in self._decisions_with_feedback(call.primary_demo_evidence)
         ]
@@ -179,6 +203,10 @@ class FakeMemoryAdapter:
         self._feedback_by_evidence_excerpt[
             decision.evidence_excerpt.text
         ] = feedback_label
+
+    def forget_late_night_window(self, window: LateNightWindow) -> None:
+        self.forget_calls.append(window)
+        self._forgotten_memory_keys.add(window.memory_key)
 
     def _decisions_with_feedback(self, primary_demo_evidence: str) -> list[Decision]:
         return [
@@ -261,6 +289,10 @@ class BlackOutWorkflow:
             decision=decision,
             feedback_label=feedback_label,
         )
+        return self._memory.recall_morning_after()
+
+    def forget_late_night_window(self, window: LateNightWindow) -> RecallResult:
+        self._memory.forget_late_night_window(window)
         return self._memory.recall_morning_after()
 
 

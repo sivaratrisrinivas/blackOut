@@ -229,3 +229,75 @@ def test_workflow_rejects_feedback_labels_outside_the_mvp_set():
         workflow.apply_feedback_label(decision, "Shame Spiral")
 
     assert memory.improve_calls == []
+
+
+def test_workflow_forgets_an_entire_late_night_window_from_future_recall():
+    memory = FakeMemoryAdapter()
+    workflow = BlackOutWorkflow(memory=memory)
+
+    workflow.load_seed_demo_dataset(
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30")
+    )
+    result = workflow.morning_after_recall()
+
+    updated_result = workflow.forget_late_night_window(result.late_night_window)
+
+    assert memory.forget_calls == [result.late_night_window]
+    assert updated_result.late_night_window != result.late_night_window
+    assert updated_result.late_night_window.label == (
+        "Prior late-night window: impulse purchase pattern"
+    )
+    assert "espresso machine" not in "\n".join(updated_result.raw_evidence)
+    assert [decision.summary for decision in updated_result.timeline] == [
+        "Wrote note: ceramic burr grinder saved for later.",
+        "Bought premium grinder from BeanForge",
+        "Do not let midnight shopping become a hobby.",
+    ]
+
+
+def test_workflow_excludes_forgotten_prior_windows_from_pattern_insights():
+    memory = FakeMemoryAdapter()
+    workflow = BlackOutWorkflow(memory=memory)
+
+    workflow.load_seed_demo_dataset(
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30")
+    )
+    result = workflow.morning_after_recall()
+    purchase_pattern = next(
+        pattern
+        for pattern in result.pattern_insights
+        if pattern.current_decision.summary == "Bought espresso machine from BeanForge"
+    )
+    prior_window = next(
+        call.window
+        for call in memory.remember_calls
+        if call.window.label == "Prior late-night window: impulse purchase pattern"
+    )
+
+    updated_result = workflow.forget_late_night_window(prior_window)
+
+    assert purchase_pattern.related_prior_decisions[0].summary == (
+        "Bought premium grinder from BeanForge"
+    )
+    assert all(
+        pattern.current_decision.summary != "Bought espresso machine from BeanForge"
+        for pattern in updated_result.pattern_insights
+    )
+
+
+def test_workflow_returns_an_empty_recall_result_when_all_windows_are_forgotten():
+    workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
+
+    remembered_window = workflow.remember_evidence(
+        primary_evidence="""Late-Night Window: Pasted evidence
+00:12 - ShopSwift receipt: novelty keyboard, $129.
+""",
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30"),
+    )
+
+    updated_result = workflow.forget_late_night_window(remembered_window)
+
+    assert updated_result.late_night_window.label == "No remembered Late-Night Window"
+    assert updated_result.timeline == []
+    assert updated_result.pattern_insights == []
+    assert updated_result.raw_evidence == []

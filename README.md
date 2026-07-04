@@ -38,6 +38,7 @@ Today, the app can:
 - Label Pattern insights as possible risk until the user marks a related Decision as Regret.
 - Let the user apply one of four Feedback Labels to a Decision: Regret, Fine, Funny, or Worth it.
 - Improve remembered Decisions from feedback so future recall can show the user's actual judgment.
+- Forget an entire Late-Night Window after confirmation, removing that window from future recall.
 - Keep raw Evidence behind a collapsible provenance section instead of making it the main result.
 - Run deterministically with a fake memory adapter for tests and demos.
 
@@ -52,6 +53,8 @@ The main idea is simple: show actions and commitments first, not a pile of raw t
 Pattern insights matter because repeat behavior is often the useful part of memory. A single late-night purchase might be fine. Seeing that it looks like a previous late-night purchase gives the user better context without calling it a mistake.
 
 Feedback Labels matter because BlackOut should not pretend every late-night Decision is a problem. Regret teaches the memory layer to treat similar future Decisions more seriously. Fine, Funny, and Worth it let the user say, in plain terms, that a strange-looking Decision was harmless, amusing, or actually a good call.
+
+Forgetting matters because some remembered evidence is sensitive. The MVP keeps the privacy control simple: the user forgets one whole Late-Night Window, not individual lines, so the app can remove that night cleanly and confirm what happened.
 
 The MVP uses Streamlit, Python, and Cognee so the demo can make the memory lifecycle visible:
 
@@ -96,6 +99,8 @@ The app shows those Pattern insights before raw Evidence. This gives the user en
 Each recalled Decision now includes Feedback Label actions. When the user marks a Decision as Regret, Fine, Funny, or Worth it, Streamlit sends that choice back through `BlackOutWorkflow`. The workflow records the label through the memory adapter and returns an updated Recall Result, so the page can keep the timeline, Pattern insights, and raw Evidence in place.
 
 The fake memory adapter records every improve-memory call for tests. It also attaches the latest Feedback Label to matching recalled Decisions. If a current Pattern insight is related to a Decision marked Regret, the insight changes from possible risk to confirmed regret. Other labels are still remembered, but they do not turn a pattern into confirmed regret.
+
+The Recall Result also exposes the MVP Forget Scope: one complete Late-Night Window. After the user confirms the action, Streamlit routes the forget request through `BlackOutWorkflow`, the memory adapter forgets that window as a separable remembered unit, and the next Morning-After Recall excludes its Evidence and Decisions.
 
 The current extraction is intentionally narrow and demo-friendly. It reads timestamped text lines such as receipts, messages, notes, tasks, calendar entries, and commits, then turns them into the MVP Decision shape. The real Cognee adapter will later sit behind the same workflow and memory adapter seam.
 

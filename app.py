@@ -55,6 +55,36 @@ if st.button("What did I do last night?", type="primary"):
 if "recall_result" in st.session_state:
     result = st.session_state["recall_result"]
 
+    if "forget_confirmation" in st.session_state:
+        st.success(st.session_state.pop("forget_confirmation"))
+
+    st.subheader("Late-Night Window")
+    st.write(f"{result.late_night_window.label}")
+    st.caption(
+        f"{result.late_night_window.starts_at} to {result.late_night_window.ends_at}"
+    )
+
+    can_forget_window = bool(result.late_night_window.starts_at)
+    confirm_forget = st.checkbox(
+        "Confirm forgetting this entire Late-Night Window",
+        key=f"confirm-forget-{result.late_night_window.memory_key}",
+        disabled=not can_forget_window,
+    )
+    if st.button(
+        "Forget this Late-Night Window",
+        disabled=not can_forget_window or not confirm_forget,
+        type="secondary",
+    ):
+        forgotten_window = result.late_night_window
+        st.session_state["recall_result"] = workflow.forget_late_night_window(
+            forgotten_window
+        )
+        st.session_state["forget_confirmation"] = (
+            f"Forgot Late-Night Window: {forgotten_window.starts_at} to "
+            f"{forgotten_window.ends_at}."
+        )
+        st.rerun()
+
     st.subheader("Decision timeline")
     for index, decision in enumerate(result.timeline):
         st.markdown(f"**{decision.timestamp}** - {decision.summary}")
