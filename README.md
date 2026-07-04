@@ -44,7 +44,8 @@ Today, the app can:
 - Forget an entire Late-Night Window after confirmation, removing that window from future recall.
 - Keep forgotten Late-Night Windows out of both Morning-After Recall and Ask Your Memory answers.
 - Keep raw Evidence behind a collapsible provenance section instead of making it the main result.
-- Run deterministically with a fake memory adapter for tests and demos.
+- Run deterministically with a fake memory adapter for tests and local demos.
+- Use the real Cognee memory adapter when environment variables are configured.
 
 ## Why It Exists
 
@@ -73,7 +74,7 @@ The MVP uses Streamlit, Python, and Cognee so the demo can make the memory lifec
 
 Streamlit does not own the product behavior directly. It calls `BlackOutWorkflow`, which is the main interface for product actions.
 
-The workflow talks to a memory adapter. Today the repo includes a fake adapter so the first slices are deterministic and testable. A real Cognee adapter is planned as the next memory implementation behind the same seam.
+The workflow talks to a memory adapter. The default adapter is fake so local demos and tests stay deterministic. A real Cognee adapter sits behind the same seam and can be enabled in configured environments.
 
 When the user clicks Seed Demo Mode, the workflow:
 
@@ -120,9 +121,17 @@ Each recalled Decision now includes Feedback Label actions. When the user marks 
 
 The fake memory adapter records every improve-memory call for tests. It also attaches the latest Feedback Label to matching recalled Decisions. If a current Pattern insight is related to a Decision marked Regret, the insight changes from possible risk to confirmed regret. Other labels are still remembered, but they do not turn a pattern into confirmed regret.
 
+The real Cognee adapter maps the visible Memory Lifecycle to Cognee calls:
+
+- Remember Evidence by adding a Late-Night Window document to a separable Cognee dataset and running cognify.
+- Recall Morning-After Recall context through Cognee search while returning the structured Recall Result the app displays.
+- Answer Ask Your Memory through Cognee search and grounded Evidence Excerpts.
+- Improve memory from Feedback Labels by adding feedback context and calling improve.
+- Forget a Late-Night Window by deleting that window's Cognee dataset.
+
 The Recall Result also exposes the MVP Forget Scope: one complete Late-Night Window. After the user confirms the action, Streamlit routes the forget request through `BlackOutWorkflow`, the memory adapter forgets that window as a separable remembered unit, and the next Morning-After Recall excludes its Evidence and Decisions.
 
-The current extraction is intentionally narrow and demo-friendly. It reads timestamped text lines such as receipts, messages, notes, tasks, calendar entries, and commits, then turns them into the MVP Decision shape. The real Cognee adapter will later sit behind the same workflow and memory adapter seam.
+The current extraction is intentionally narrow and demo-friendly. It reads timestamped text lines such as receipts, messages, notes, tasks, calendar entries, and commits, then turns them into the MVP Decision shape. The real Cognee adapter uses the same workflow and memory adapter seam.
 
 ## Local Development
 
@@ -131,6 +140,28 @@ Install the app and development dependencies:
 ```bash
 python3 -m pip install -e ".[dev]"
 ```
+
+Install the optional Cognee adapter dependency:
+
+```bash
+python3 -m pip install -e ".[real-memory]"
+```
+
+By default, BlackOut uses the fake adapter. To enable real Cognee memory, configure environment variables before launching the app:
+
+```bash
+export BLACKOUT_MEMORY_ADAPTER=cognee
+export LLM_API_KEY=...
+```
+
+Optional environment variables:
+
+```bash
+export BLACKOUT_COGNEE_DATASET_PREFIX=blackout
+export BLACKOUT_RUN_COGNEE_SMOKE=1
+```
+
+`LLM_API_KEY` is read from the environment only. Do not put secret values in tracked files.
 
 Run the Streamlit app:
 
@@ -145,3 +176,9 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest
 ```
 
 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` keeps unrelated globally installed pytest plugins from affecting this project test run.
+
+Run the optional live Cognee smoke path only in a configured environment:
+
+```bash
+BLACKOUT_RUN_COGNEE_SMOKE=1 BLACKOUT_MEMORY_ADAPTER=cognee PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest tests/test_cognee_smoke.py
+```

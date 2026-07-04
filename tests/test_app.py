@@ -1,6 +1,17 @@
 from streamlit.testing.v1 import AppTest
 
 
+def test_app_shows_clear_message_when_cognee_credentials_are_missing(monkeypatch):
+    monkeypatch.setenv("BLACKOUT_MEMORY_ADAPTER", "cognee")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+
+    app = AppTest.from_file("app.py")
+
+    app.run()
+
+    assert any("LLM_API_KEY" in error.value for error in app.error)
+
+
 def test_app_displays_ask_your_memory_answer_from_a_suggested_prompt():
     app = AppTest.from_file("app.py")
 

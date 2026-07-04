@@ -1,11 +1,19 @@
 import streamlit as st
 
-from blackout.workflow import FEEDBACK_LABELS, BlackOutWorkflow, FakeMemoryAdapter
+from blackout.cognee_adapter import (
+    CogneeConfigurationError,
+    build_memory_adapter_from_env,
+)
+from blackout.workflow import FEEDBACK_LABELS, BlackOutWorkflow
 
 
 def build_workflow() -> BlackOutWorkflow:
     if "memory_adapter" not in st.session_state:
-        st.session_state["memory_adapter"] = FakeMemoryAdapter()
+        try:
+            st.session_state["memory_adapter"] = build_memory_adapter_from_env()
+        except CogneeConfigurationError as error:
+            st.error(str(error))
+            st.stop()
 
     return BlackOutWorkflow(memory=st.session_state["memory_adapter"])
 
