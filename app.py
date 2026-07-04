@@ -15,6 +15,29 @@ st.title("BlackOut")
 
 workflow = build_workflow()
 
+pasted_evidence = st.text_area(
+    "Paste Evidence",
+    height=160,
+    placeholder=(
+        "Late-Night Window: Pasted evidence\n"
+        "00:12 - ShopSwift receipt: novelty keyboard, $129.\n"
+        "01:05 - Text to Priya: \"I can totally redesign the slides by breakfast.\""
+    ),
+)
+
+if st.button("Remember Pasted Evidence"):
+    if pasted_evidence.strip():
+        remembered_window = workflow.remember_evidence(
+            primary_evidence=pasted_evidence.strip()
+        )
+        st.success("Remembered pasted Evidence for Morning-After Recall.")
+        st.caption(
+            f"Late-Night Window: {remembered_window.starts_at} to "
+            f"{remembered_window.ends_at}"
+        )
+    else:
+        st.warning("Paste Evidence before remembering it.")
+
 if st.button("Load Seed Demo Mode"):
     seed_result = workflow.load_seed_demo_dataset()
     st.success(
@@ -33,7 +56,8 @@ if st.button("What did I do last night?", type="primary"):
     for decision in result.timeline:
         st.markdown(f"**{decision.timestamp}** - {decision.summary}")
         st.caption(
-            f"{decision.category} - {', '.join(decision.people_or_vendors)}"
+            f"{decision.category} - {decision.source_type} - "
+            f"{', '.join(decision.people_or_vendors)}"
         )
         if decision.amount:
             st.write(f"Amount: {decision.amount}")

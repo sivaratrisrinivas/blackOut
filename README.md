@@ -28,20 +28,22 @@ The app also has Seed Demo Mode. It loads three prepared Late-Night Windows so t
 - A prior impulse-purchase pattern window.
 - A prior emotional-message pattern window.
 
-The current implementation includes:
+Today, the app can:
 
-- A Streamlit app.
-- A `BlackOutWorkflow` product seam.
-- Typed domain objects for Late-Night Window, Decision, Regret Signal, Evidence Excerpt, and Recall Result.
-- Seed Demo Mode that remembers three separable Late-Night Windows from committed Primary Demo Evidence.
-- A deterministic fake memory adapter for tests and demos.
-- A Recall Result layout with timeline first, pattern insights second, and raw evidence tucked behind an expander.
+- Load Seed Demo Mode with three prepared Late-Night Windows.
+- Remember pasted Evidence without connecting any personal accounts.
+- Reconstruct the most recent Late-Night Window into a Decision timeline.
+- Show each Decision with a timestamp, category, source type, people or vendors, amount, neutral regret signals, and an Evidence Excerpt when those details are available.
+- Keep raw Evidence behind a collapsible provenance section instead of making it the main result.
+- Run deterministically with a fake memory adapter for tests and demos.
 
 ## Why It Exists
 
 Late-night digital decisions are easy to scatter across apps and hard to inspect later. A person may wake up unsure what they bought, sent, promised, subscribed to, wrote, or changed.
 
 BlackOut is meant to make that review fast and humane. It is not trying to diagnose the user or shame them. It simply helps them inspect decisions, see possible risk, notice repeats, and choose what memory should be improved or forgotten.
+
+The main idea is simple: show actions and commitments first, not a pile of raw text. A user should be able to scan the timeline and quickly understand what happened.
 
 The MVP uses Streamlit, Python, and Cognee so the demo can make the memory lifecycle visible:
 
@@ -65,12 +67,16 @@ When the user clicks Seed Demo Mode, the workflow:
 
 Each window is remembered as a separable unit so a later Forget Scope action can remove one complete Late-Night Window.
 
-The current recall tracer bullet returns one deterministic Recall Result:
+Users can also paste Evidence directly. The workflow stores that text as the most recent completed Late-Night Window, using the same memory adapter seam as Seed Demo Mode.
 
-- A late-night purchase decision.
-- A neutral regret signal.
-- A prior-pattern insight.
-- The raw evidence excerpt used to explain the result.
+Morning-After Recall reconstructs remembered Evidence into a deterministic Decision timeline for the most recent Late-Night Window:
+
+- Timestamped decisions.
+- MVP Decision Categories: purchase, message, note, commit, plan, subscription, or other.
+- People or vendors, amounts, neutral regret signals, and Evidence Excerpts when available.
+- Raw Evidence shown only behind the collapsible provenance section.
+
+The current extraction is intentionally narrow and demo-friendly. It reads timestamped text lines such as receipts, messages, notes, tasks, calendar entries, and commits, then turns them into the MVP Decision shape. The real Cognee adapter will later sit behind the same workflow and memory adapter seam.
 
 ## Local Development
 
