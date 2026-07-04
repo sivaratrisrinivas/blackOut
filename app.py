@@ -67,7 +67,15 @@ if st.button("What did I do last night?", type="primary"):
 
     st.subheader("Pattern insights")
     for insight in result.pattern_insights:
-        st.info(insight)
+        st.info(f"{insight.status.title()}: {insight.summary}")
+        for prior_decision in insight.related_prior_decisions:
+            names = ", ".join(prior_decision.people_or_vendors)
+            context = f"{prior_decision.timestamp} - {prior_decision.summary}"
+            if prior_decision.amount:
+                context = f"{context} ({prior_decision.amount})"
+            if names:
+                context = f"{context} - {names}"
+            st.caption(context)
 
     with st.expander("Raw evidence"):
         for evidence in result.raw_evidence:

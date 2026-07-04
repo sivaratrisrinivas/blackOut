@@ -34,6 +34,8 @@ Today, the app can:
 - Remember pasted Evidence without connecting any personal accounts.
 - Reconstruct the most recent Late-Night Window into a Decision timeline.
 - Show each Decision with a timestamp, category, source type, people or vendors, amount, neutral regret signals, and an Evidence Excerpt when those details are available.
+- Compare the most recent Late-Night Window with prior remembered windows and show similar prior Decisions as Pattern insights.
+- Label Pattern insights as possible risk, not confirmed regret, so the app stays useful without overstating what it knows.
 - Keep raw Evidence behind a collapsible provenance section instead of making it the main result.
 - Run deterministically with a fake memory adapter for tests and demos.
 
@@ -43,7 +45,9 @@ Late-night digital decisions are easy to scatter across apps and hard to inspect
 
 BlackOut is meant to make that review fast and humane. It is not trying to diagnose the user or shame them. It simply helps them inspect decisions, see possible risk, notice repeats, and choose what memory should be improved or forgotten.
 
-The main idea is simple: show actions and commitments first, not a pile of raw text. A user should be able to scan the timeline and quickly understand what happened.
+The main idea is simple: show actions and commitments first, not a pile of raw text. A user should be able to scan the timeline, notice whether anything resembles a prior late-night pattern, and quickly understand what happened.
+
+Pattern insights matter because repeat behavior is often the useful part of memory. A single late-night purchase might be fine. Seeing that it looks like a previous late-night purchase gives the user better context without calling it a mistake.
 
 The MVP uses Streamlit, Python, and Cognee so the demo can make the memory lifecycle visible:
 
@@ -75,6 +79,15 @@ Morning-After Recall reconstructs remembered Evidence into a deterministic Decis
 - MVP Decision Categories: purchase, message, note, commit, plan, subscription, or other.
 - People or vendors, amounts, neutral regret signals, and Evidence Excerpts when available.
 - Raw Evidence shown only behind the collapsible provenance section.
+
+After the timeline, Morning-After Recall compares current Decisions with prior remembered Decisions. When it finds a similar category with the same person or vendor, it returns a Pattern insight with:
+
+- A possible-risk status.
+- A short plain-English summary.
+- The current Decision that triggered the insight.
+- Compact related prior Decisions, such as timestamp, summary, vendor or person, and amount when available.
+
+The app shows those Pattern insights before raw Evidence. This gives the user enough context to recognize the pattern without exposing full prior transcripts by default.
 
 The current extraction is intentionally narrow and demo-friendly. It reads timestamped text lines such as receipts, messages, notes, tasks, calendar entries, and commits, then turns them into the MVP Decision shape. The real Cognee adapter will later sit behind the same workflow and memory adapter seam.
 

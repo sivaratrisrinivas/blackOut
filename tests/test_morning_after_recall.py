@@ -60,6 +60,35 @@ def test_morning_after_recall_reconstructs_seeded_evidence_as_a_decision_timelin
     ]
 
 
+def test_morning_after_recall_surfaces_prior_pattern_insights_separate_from_raw_evidence():
+    workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
+
+    workflow.load_seed_demo_dataset(
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30")
+    )
+    result = workflow.morning_after_recall()
+
+    assert result.pattern_insights
+
+    insight = next(
+        pattern
+        for pattern in result.pattern_insights
+        if pattern.current_decision.summary == "Bought espresso machine from BeanForge"
+    )
+    assert insight.status == "possible risk"
+    assert insight.summary == (
+        "BeanForge purchases appeared in this Late-Night Window and a prior one."
+    )
+    assert insight.current_decision.summary == "Bought espresso machine from BeanForge"
+    assert len(insight.related_prior_decisions) == 1
+
+    prior_decision = insight.related_prior_decisions[0]
+    assert prior_decision.summary == "Bought premium grinder from BeanForge"
+    assert prior_decision.timestamp == "02:58"
+    assert prior_decision.amount == "$179"
+    assert prior_decision.evidence_excerpt.text not in result.raw_evidence
+
+
 def test_morning_after_recall_reconstructs_pasted_evidence_as_a_decision_timeline():
     workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
 

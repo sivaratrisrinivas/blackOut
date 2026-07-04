@@ -48,10 +48,18 @@ class Decision:
 
 
 @dataclass(frozen=True)
+class PatternInsight:
+    status: str
+    summary: str
+    current_decision: Decision
+    related_prior_decisions: list[Decision]
+
+
+@dataclass(frozen=True)
 class RecallResult:
     late_night_window: LateNightWindow
     timeline: list[Decision]
-    pattern_insights: list[str]
+    pattern_insights: list[PatternInsight]
     raw_evidence: list[str]
 
 
@@ -95,6 +103,17 @@ class FakeMemoryAdapter:
         if not self.remember_calls:
             evidence = "03:12 - BeanForge receipt: espresso machine, $249"
 
+            decision = Decision(
+                timestamp="03:12",
+                summary="Bought a 3am espresso machine",
+                category="purchase",
+                source_type="receipt",
+                people_or_vendors=["BeanForge"],
+                amount="$249",
+                regret_signals=["high spend after midnight"],
+                evidence_excerpt=EvidenceExcerpt(text=evidence),
+            )
+
             return RecallResult(
                 late_night_window=LateNightWindow(
                     label="Most recent late-night window",
@@ -102,25 +121,12 @@ class FakeMemoryAdapter:
                     ends_at="05:00",
                     memory_key="late-night-window:most-recent",
                 ),
-                timeline=[
-                    Decision(
-                        timestamp="03:12",
-                        summary="Bought a 3am espresso machine",
-                        category="purchase",
-                        source_type="receipt",
-                        people_or_vendors=["BeanForge"],
-                        amount="$249",
-                        regret_signals=["high spend after midnight"],
-                        evidence_excerpt=EvidenceExcerpt(text=evidence),
-                    )
-                ],
-                pattern_insights=[
-                    "Similar late-night purchases showed up in prior windows."
-                ],
+                timeline=[decision],
+                pattern_insights=[],
                 raw_evidence=[evidence],
             )
 
-        _, remembered_window = max(
+        remembered_index, remembered_window = max(
             enumerate(self.remember_calls),
             key=lambda indexed_call: (
                 indexed_call[1].window.starts_at,
@@ -128,11 +134,18 @@ class FakeMemoryAdapter:
             ),
         )
         raw_evidence = _evidence_lines(remembered_window.primary_demo_evidence)
+        timeline = [_decision_from_evidence_line(line) for line in raw_evidence]
+        prior_decisions = [
+            decision
+            for call_index, call in enumerate(self.remember_calls)
+            if call_index != remembered_index
+            for decision in _decisions_from_evidence(call.primary_demo_evidence)
+        ]
 
         return RecallResult(
             late_night_window=remembered_window.window,
-            timeline=[_decision_from_evidence_line(line) for line in raw_evidence],
-            pattern_insights=[],
+            timeline=timeline,
+            pattern_insights=_pattern_insights_for(timeline, prior_decisions),
             raw_evidence=raw_evidence,
         )
 
@@ -241,6 +254,66 @@ def _evidence_lines(primary_demo_evidence: str) -> list[str]:
         for line in primary_demo_evidence.splitlines()
         if _EVIDENCE_LINE.match(line.strip())
     ]
+
+
+def _decisions_from_evidence(primary_demo_evidence: str) -> list[Decision]:
+    return [
+        _decision_from_evidence_line(line)
+        for line in _evidence_lines(primary_demo_evidence)
+    ]
+
+
+def _pattern_insights_for(
+    current_decisions: list[Decision],
+    prior_decisions: list[Decision],
+) -> list[PatternInsight]:
+    insights: list[PatternInsight] = []
+
+    for decision in current_decisions:
+        related = [
+            prior_decision
+            for prior_decision in prior_decisions
+            if _is_similar_prior_decision(decision, prior_decision)
+        ]
+        if related:
+            insights.append(
+                PatternInsight(
+                    status="possible risk",
+                    summary=_pattern_summary_for(decision, related),
+                    current_decision=decision,
+                    related_prior_decisions=related,
+                )
+            )
+
+    return insights
+
+
+def _is_similar_prior_decision(
+    current_decision: Decision, prior_decision: Decision
+) -> bool:
+    if current_decision.category != prior_decision.category:
+        return False
+
+    current_names = set(current_decision.people_or_vendors)
+    prior_names = set(prior_decision.people_or_vendors)
+    return bool(current_names.intersection(prior_names))
+
+
+def _pattern_summary_for(decision: Decision, related: list[Decision]) -> str:
+    shared_names = [
+        name
+        for name in decision.people_or_vendors
+        if any(name in prior.people_or_vendors for prior in related)
+    ]
+    if shared_names:
+        return (
+            f"{shared_names[0]} {decision.category}s appeared in this "
+            "Late-Night Window and a prior one."
+        )
+    return (
+        f"Similar {decision.category} Decisions appeared in this "
+        "Late-Night Window and prior ones."
+    )
 
 
 def _decision_from_evidence_line(line: str) -> Decision:
