@@ -1,0 +1,18 @@
+[project]
+name = "blackout"
+version = "0.1.0"
+description = "Reconstruct late-night digital decisions from messy evidence."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "streamlit>=1.36",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
