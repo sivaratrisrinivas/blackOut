@@ -8,7 +8,7 @@ if src_path.exists():
     sys.path.insert(0, str(src_path))
 
 from blackout.workflow import BlackOutWorkflow, FEEDBACK_LABELS
-from blackout.cognee_adapter import FakeMemoryAdapter
+from blackout.cognee_adapter import build_memory_adapter_from_env
 
 app = Flask(__name__)
 _workflow: BlackOutWorkflow | None = None
@@ -17,7 +17,9 @@ _workflow: BlackOutWorkflow | None = None
 def get_workflow() -> BlackOutWorkflow:
     global _workflow
     if _workflow is None:
-        _workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
+        _workflow = BlackOutWorkflow(
+            memory=build_memory_adapter_from_env(load_shell_exports=True)
+        )
     return _workflow
 
 
@@ -144,7 +146,9 @@ def api_prompts():
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
     global _workflow
-    _workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
+    _workflow = BlackOutWorkflow(
+        memory=build_memory_adapter_from_env(load_shell_exports=True)
+    )
     return jsonify({"success": True})
 
 

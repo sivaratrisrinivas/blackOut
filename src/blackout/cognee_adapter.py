@@ -507,7 +507,7 @@ def build_memory_adapter_from_env(
             ("BLACKOUT_MEMORY_ADAPTER", "BLACKOUT_COGNEE_DATASET_PREFIX")
             + COGNEE_REQUIRED_ENV_VARS,
         )
-    adapter_name = configured_env.get("BLACKOUT_MEMORY_ADAPTER", "fake").lower()
+    adapter_name = configured_env.get("BLACKOUT_MEMORY_ADAPTER", "cognee").lower()
 
     if adapter_name in {"", "fake"}:
         return FakeMemoryAdapter()
@@ -524,8 +524,8 @@ def build_memory_adapter_from_env(
         missing_list = ", ".join(missing_names)
         raise CogneeConfigurationError(
             "Cognee memory requires environment variable(s): "
-            f"{missing_list}. Set BLACKOUT_MEMORY_ADAPTER=cognee only in a "
-            "configured environment."
+            f"{missing_list}. Set BLACKOUT_MEMORY_ADAPTER=fake only when you "
+            "need deterministic local memory."
         )
 
     return RealCogneeMemoryAdapter(

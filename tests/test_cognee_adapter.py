@@ -53,8 +53,24 @@ class RecordingCogneeClient:
         self.deleted_datasets.add(dataset_name)
 
 
-def test_memory_adapter_defaults_to_fake_for_deterministic_local_runs(monkeypatch):
+def test_memory_adapter_defaults_to_cognee_and_reports_missing_credentials(monkeypatch):
     monkeypatch.delenv("BLACKOUT_MEMORY_ADAPTER", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("COGNEE_BASE_URL", raising=False)
+    monkeypatch.delenv("COGNEE_API_KEY", raising=False)
+
+    with pytest.raises(CogneeConfigurationError) as error:
+        build_memory_adapter_from_env()
+
+    message = str(error.value)
+    assert "LLM_API_KEY" in message
+    assert "COGNEE_BASE_URL" in message
+    assert "COGNEE_API_KEY" in message
+    assert "secret" not in message.lower()
+
+
+def test_memory_adapter_uses_fake_when_explicitly_configured(monkeypatch):
+    monkeypatch.setenv("BLACKOUT_MEMORY_ADAPTER", "fake")
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.delenv("COGNEE_BASE_URL", raising=False)
     monkeypatch.delenv("COGNEE_API_KEY", raising=False)

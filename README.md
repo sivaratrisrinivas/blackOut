@@ -44,7 +44,7 @@ Today, the app can:
 - Forget an entire Late-Night Window after confirmation, removing that window from future recall.
 - Keep forgotten Late-Night Windows out of both Morning-After Recall and Ask Your Memory answers.
 - Keep raw Evidence behind a collapsible provenance section instead of making it the main result.
-- Run deterministically with a fake memory adapter for tests and local demos.
+- Run deterministically with a fake memory adapter when explicitly configured for tests and local demos.
 - Use the real Cognee memory adapter when environment variables are configured.
 
 ## Why It Exists
@@ -106,11 +106,11 @@ Screenshot and image support is a secondary evidence path planned for a future r
 
 ### Environment Variables
 
-Set these to enable real Cognee memory (values are secrets — never commit them):
+Real Cognee memory is the default app memory path. Set these before launching the API server (values are secrets — never commit them):
 
 | Variable | Purpose |
 |---|---|
-| `BLACKOUT_MEMORY_ADAPTER` | Set to `cognee` to use real memory; defaults to `fake` |
+| `BLACKOUT_MEMORY_ADAPTER` | Optional. Defaults to `cognee`; set to `fake` only for deterministic local/test memory |
 | `COGNEE_BASE_URL` | Cognee instance URL |
 | `COGNEE_API_KEY` | Cognee API key |
 | `LLM_API_KEY` | LLM provider key used by Cognee |
@@ -126,7 +126,7 @@ Optional:
 
 The frontend does not own the product behavior directly. It calls API endpoints backed by `BlackOutWorkflow`, which is the main interface for product actions.
 
-The workflow talks to a memory adapter. The default adapter is fake so local demos and tests stay deterministic. A real Cognee adapter sits behind the same seam and can be enabled in configured environments.
+The workflow talks to a memory adapter. The app defaults to the real Cognee adapter so running BlackOut uses persistent Cognee memory when the required environment variables are configured. Tests and deterministic local runs can still opt into the fake adapter with `BLACKOUT_MEMORY_ADAPTER=fake`.
 
 When the user clicks Seed Demo Mode, the workflow:
 
@@ -199,13 +199,18 @@ Install the optional Cognee adapter dependency:
 python3 -m pip install -e ".[real-memory]"
 ```
 
-By default, BlackOut uses the fake adapter. To enable real Cognee memory, configure environment variables before launching the app:
+By default, BlackOut uses real Cognee memory. Configure the required environment variables before launching the app:
 
 ```bash
-export BLACKOUT_MEMORY_ADAPTER=cognee
 export COGNEE_BASE_URL=...
 export COGNEE_API_KEY=...
 export LLM_API_KEY=...
+```
+
+Use the fake adapter only when you want deterministic in-memory behavior:
+
+```bash
+export BLACKOUT_MEMORY_ADAPTER=fake
 ```
 
 The API server also checks `~/.bashrc` for those same `export NAME=...` lines when they are missing from the process environment. This is only a local convenience for configured development machines; the values are not printed or written into the repo.

@@ -2,14 +2,19 @@ import json
 from pathlib import Path
 
 import pytest
+import server as server_module
+from blackout.workflow import FakeMemoryAdapter
 from server import app as flask_app
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    monkeypatch.setenv("BLACKOUT_MEMORY_ADAPTER", "fake")
+    server_module._workflow = None
     with flask_app.test_client() as c:
         c.post("/api/reset")
         yield c
+    server_module._workflow = None
 
 
 class TestHTMLPage:
@@ -97,6 +102,24 @@ class TestAPIFlow:
         result = resp.get_json()
         assert result["success"] is True
         assert result["forgotten"] is True
+
+    def test_reset_uses_env_selected_memory_adapter(self, monkeypatch):
+        calls = []
+
+        def build_adapter(*, load_shell_exports):
+            calls.append(load_shell_exports)
+            return FakeMemoryAdapter()
+
+        monkeypatch.setattr(server_module, "build_memory_adapter_from_env", build_adapter)
+        server_module._workflow = None
+
+        with flask_app.test_client() as c:
+            resp = c.post("/api/reset")
+
+        assert resp.get_json()["success"] is True
+        assert calls == [True]
+        assert isinstance(server_module._workflow._memory, FakeMemoryAdapter)
+        server_module._workflow = None
 
 
 def test_readme_covers_hackathon_submission_narrative():
