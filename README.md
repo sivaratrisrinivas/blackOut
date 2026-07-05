@@ -110,9 +110,9 @@ Cognee is BlackOut's persistent memory layer. The Python workflow decides what t
 
 In this project, Cognee is used for five concrete memory operations:
 
-1. **Remember**: BlackOut writes each Late-Night Window as structured memory records into a Cognee dataset. The app also writes a small index dataset so it can find remembered windows later.
-2. **Recall**: Morning-After Recall reads remembered window records back from Cognee, reconstructs the latest Decision timeline, and compares it with prior windows.
-3. **Ask**: Ask Your Memory searches the remembered window datasets through Cognee, then BlackOut turns the grounded records into a short answer and Evidence Excerpts.
+1. **Remember**: BlackOut writes each Late-Night Window as structured memory records into a Cognee dataset. The app also writes a small index dataset so it can find remembered windows later. For the local demo, these writes are started in background mode so the UI does not wait for Cognee ingestion before showing the next page.
+2. **Recall**: Morning-After Recall reads remembered window records back from Cognee when the current process has no fresher state. Immediately after Seed Demo Mode or pasted Evidence, BlackOut recalls from an in-process mirror of the same Late-Night Windows so the user can review Decisions right away while Cognee persistence catches up.
+3. **Ask**: Ask Your Memory can make a best-effort Cognee search, then BlackOut turns the grounded Decisions into a short answer and Evidence Excerpts. If Cognee search is slow or times out during the local demo, the app still answers from the current-process memory mirror instead of blocking the page.
 4. **Improve**: Feedback Labels are remembered as additional Cognee records attached to a Decision. If the configured Cognee tenant supports the improve endpoint, BlackOut calls it as a best-effort enrichment step.
 5. **Forget**: Forgetting deletes the Cognee dataset for one complete Late-Night Window and marks that window forgotten in the index so future recall does not show it again.
 
@@ -147,7 +147,9 @@ When the user clicks Seed Demo Mode, the workflow:
 1. Finds the most recent completed Late-Night Window using the user's local time.
 2. Builds three dated Late-Night Windows from the seed dataset.
 3. Sends each window to the memory adapter as its own remembered unit.
-4. Confirms that all three windows were loaded.
+4. Keeps those same windows in current-process memory so Morning-After Recall can render immediately.
+5. Starts Cognee HTTP uploads in background threads when the real Cognee adapter is configured.
+6. Confirms that all three windows were loaded without waiting for Cognee ingestion to finish.
 
 Each window is remembered as a separable unit so a later Forget Scope action can remove one complete Late-Night Window.
 
@@ -183,16 +185,18 @@ The user can also type a freeform question. The frontend sends both suggested pr
 
 If a Late-Night Window has been forgotten, Ask Your Memory uses the same forgotten-window state as Morning-After Recall, so deleted Evidence is not shown again in an answer.
 
+With real Cognee memory, Ask Your Memory treats Cognee recall as best-effort during the local demo. A slow Cognee search should not turn into a frozen page: BlackOut still answers from the Decisions it already reconstructed in the current process.
+
 Each recalled Decision now includes Feedback Label actions. When the user marks a Decision as Regret, Fine, Funny, or Worth it, the frontend sends that choice back through `BlackOutWorkflow`. The workflow records the label through the memory adapter and returns an updated Recall Result, so the page can keep the timeline, Pattern insights, and raw Evidence in place.
 
 The fake memory adapter records every improve-memory call for tests. It also attaches the latest Feedback Label to matching recalled Decisions. If a current Pattern insight is related to a Decision marked Regret, the insight changes from possible risk to confirmed regret. Other labels are still remembered, but they do not turn a pattern into confirmed regret.
 
 The real Cognee adapter maps the visible Memory Lifecycle to Cognee calls:
 
-- Remember Evidence by sending structured BlackOut records through Cognee's supported remember path, which ingests and builds graph memory for each dataset.
-- Recall Morning-After Recall by using Cognee's recall/search path for the saved BlackOut window index and Late-Night Window records, then returning the structured Recall Result the app displays.
-- Answer Ask Your Memory by searching Cognee for saved memory records and grounding answers in Evidence Excerpts.
-- Improve memory from Feedback Labels by adding feedback context and calling Cognee's supported improve path.
+- Remember Evidence by sending structured BlackOut records through Cognee's supported remember path, which ingests and builds graph memory for each dataset. Local demo writes use Cognee's background remember flag and are dispatched off the Flask request thread for fast page transitions.
+- Recall Morning-After Recall from the current-process memory mirror after fresh writes, or by using Cognee's recall/search path for the saved BlackOut window index and Late-Night Window records after a new process starts.
+- Answer Ask Your Memory by searching Cognee for saved memory records when that search is available quickly, while falling back to already-reconstructed Decisions if Cognee is slow.
+- Improve memory from Feedback Labels by adding feedback context. The fast feedback path records the known Decision and Late-Night Window without forcing a synchronous recall or improve call.
 - Forget a Late-Night Window by deleting that window's Cognee dataset.
 
 The Recall Result also exposes the MVP Forget Scope: one complete Late-Night Window. After the user confirms the action, the frontend routes the forget request through `BlackOutWorkflow`, the memory adapter forgets that window as a separable remembered unit, and the next Morning-After Recall excludes its Evidence and Decisions.
