@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>BlackOut</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌑</text></svg>">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
+
+:root {
+  --bg: #fafafa;
+  --card: #ffffff;
+  --card-hover: #f8f8fc;
+  --text: #1a1a1a;
+  --text2: #8a8a8f;
+  --text3: #aeaeb2;
+  --accent: #d4a574;
+  --accent2: #c49565;
+  --accent-glow: rgba(212,165,116,0.15);
+  --btn-primary: #2c2c2e;
+  --btn-primary-hover: #3a3a3c;
+  --btn-primary-glow: rgba(44,44,46,0.12);
+  --radius: 20px;
+  --radius-sm: 12px;
+  --shadow: 0 2px 20px rgba(0,0,0,0.04);
+  --shadow-hover: 0 8px 48px rgba(0,0,0,0.07);
+  --shadow-lg: 0 16px 64px rgba(0,0,0,0.08);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-inout: cubic-bezier(0.77, 0, 0.175, 1);
+  --font: 'Inter', -apple-system, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif;
+  --mono: 'SF Mono', 'JetBrains Mono', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+#app {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* particles */
+#particles {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 0;
+}
+
+/* progress */
+.progress-wrap {
+  margin-bottom: 2.5rem;
+  opacity: 0;
+  transition: opacity 600ms var(--ease-out);
+}
+.progress-wrap.visible { opacity: 1; }
+.progress-line {
+  height: 2px; background: #e8e8ec; border-radius: 2px; overflow: hidden; margin-bottom: 0.75rem;
+}
+.progress-fill {
+  height: 100%; background: linear-gradient(90deg, var(--accent), #e8c9a8);
+  border-radius: 2px; transition: width 600ms var(--ease-inout);
+}
+.progress-dots {
+  display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap;
+}
+.dot {
+  font-size: 0.7rem; color: var(--text3); letter-spacing: 0.03em;
+  transition: all 400ms var(--ease-out); position: relative; padding: 0.25rem 0.5rem;
+}
+.dot.active { color: var(--text); font-weight: 600; font-size: 0.8rem; }
+.dot.done { color: var(--accent); }
+.dot-sep { color: var(--text3); font-size: 0.5rem; align-self: center; }
+
+/* screens */
+.screen { display: none; }
+.screen.active { display: block; }
+
+/* screen transitions */
+.screen-enter {
+  animation: screenIn 600ms var(--ease-out) both;
+}
+.screen-exit {
+  animation: screenOut 350ms var(--ease-out) both;
+}
+
+@keyframes screenIn {
+  0% { opacity: 0; transform: translateY(24px) scale(0.97); filter: blur(6px); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+@keyframes screenOut {
+  0% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  100% { opacity: 0; transform: translateY(-12px) scale(0.97); filter: blur(4px); }
+}
+
+/* cards */
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  transition: transform 400ms var(--ease-out), box-shadow 400ms var(--ease-out);
+  transform: translateY(0);
+  cursor: default;
+}
+.card:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+}
+.card-tilt {
+  transition: transform 100ms ease-out;
+  transform-style: preserve-3d;
+}
+
+/* buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  font-family: var(--font); font-size: 0.9rem; font-weight: 500;
+  padding: 0.75rem 1.5rem; border-radius: var(--radius-sm);
+  border: none; outline: none; cursor: pointer;
+  background: #f2f2f4; color: var(--text);
+  transition: transform 200ms var(--ease-spring), box-shadow 200ms ease, background 200ms ease;
+  position: relative; overflow: hidden;
+  width: 100%; letter-spacing: -0.01em;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:hover { background: #e8e8ec; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.04); }
+.btn:active { transform: scale(0.97); }
+.btn-primary {
+  background: var(--btn-primary);
+  color: #fff; font-weight: 600;
+  box-shadow: 0 4px 20px var(--btn-primary-glow);
+}
+.btn-primary:hover { background: var(--btn-primary-hover); box-shadow: 0 8px 32px rgba(44,44,46,0.18); transform: translateY(-2px); }
+.btn-primary:active { background: #222224; }
+.btn-secondary {
+  background: transparent; color: var(--text2); box-shadow: none;
+}
+.btn-secondary:hover { background: rgba(0,0,0,0.03); color: var(--text); }
+.btn-danger {
+  background: rgba(192,57,43,0.06); color: #c0392b;
+}
+.btn-danger:hover { background: rgba(192,57,43,0.1); }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+.btn-row { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+.btn-row .btn { flex: 1; }
+
+/* ripple */
+.ripple { position: absolute; border-radius: 50%; background: rgba(255,255,255,0.25); pointer-events: none; animation: rippleAnim 600ms ease-out forwards; }
+.btn-primary .ripple { background: rgba(255,255,255,0.3); }
+@keyframes rippleAnim { to { transform: scale(4); opacity: 0; } }
+
+/* text inputs */
+input, textarea {
+  font-family: var(--font); font-size: 0.95rem; color: var(--text);
+  background: var(--card); border: 1.5px solid #e8e8ec; border-radius: var(--radius-sm);
+  padding: 0.9rem 1.1rem; outline: none; width: 100%;
+  transition: border-color 300ms var(--ease-out), box-shadow 300ms var(--ease-out);
+  resize: vertical;
+}
+input:focus, textarea:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-glow);
+}
+input::placeholder, textarea::placeholder { color: var(--text3); }
+
+/* choices */
+.choices { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+.choice-card {
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 2rem 1.5rem;
+  text-align: center; cursor: pointer;
+  transition: transform 300ms var(--ease-spring), box-shadow 300ms ease;
+  border: 1.5px solid transparent;
+}
+.choice-card:hover { transform: translateY(-4px) scale(1.01); box-shadow: var(--shadow-hover); }
+.choice-card:active { transform: scale(0.97); }
+.choice-icon { font-size: 2.2rem; margin-bottom: 0.75rem; display: block; }
+.choice-title { font-size: 1.05rem; font-weight: 600; color: var(--text); margin-bottom: 0.4rem; }
+.choice-desc { font-size: 0.8rem; color: var(--text3); line-height: 1.5; }
+
+/* decision card */
+.dc {
+  animation: cardIn 500ms var(--ease-out) both;
+  padding: 1.25rem 0;
+  border-bottom: 1px solid #f0f0f2;
+  transition: background 200ms ease;
+  border-radius: 4px;
+  margin: 0 -0.5rem;
+  padding: 1rem 0.75rem;
+}
+.dc:hover { background: #f8f8fa; }
+.dc:last-child { border-bottom: none; }
+.dc-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.dc-l { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.dc-r { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.dc-ts { font-family: var(--mono); font-size: 0.8rem; color: var(--text3); font-weight: 500; }
+.dc-cat { border-radius: 9999px; padding: 1px 9px; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.dc-st { font-size: 0.75rem; color: var(--text3); }
+.dc-amt { font-family: var(--mono); font-size: 0.85rem; color: var(--accent); font-weight: 600; }
+.dc-fb { border-radius: 9999px; padding: 2px 10px; font-size: 0.75rem; font-weight: 600; animation: badgePop 350ms var(--ease-spring) both; white-space: nowrap; }
+.dc-s { font-size: 0.95rem; font-weight: 500; color: var(--text); margin-top: 0.45rem; }
+.dc-e { display: flex; gap: 0.4rem; margin-top: 0.35rem; flex-wrap: wrap; }
+.dc-sig { background: rgba(231,76,60,0.06); color: #e74c3c; font-size: 0.7rem; padding: 1px 8px; border-radius: 9999px; border: 1px solid rgba(231,76,60,0.1); }
+.dc-ex { margin-top: 0.4rem; font-size: 0.8rem; color: var(--text3); font-family: var(--mono); }
+
+@keyframes cardIn {
+  0% { opacity: 0; transform: translateY(12px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes badgePop {
+  0% { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* insight */
+.insight { animation: cardIn 500ms var(--ease-out) both; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1rem; margin-bottom: 0.75rem; }
+.insight-h { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.insight-badge { border-radius: 9999px; padding: 1px 8px; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.insight-s { font-size: 0.9rem; color: var(--text); font-weight: 500; }
+
+/* ask answer */
+.answer-box { animation: cardIn 400ms var(--ease-out) both; background: rgba(212,165,116,0.06); border: 1px solid rgba(212,165,116,0.12); border-radius: var(--radius); padding: 1rem; margin-bottom: 0.75rem; }
+.answer-label { font-size: 0.7rem; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.3rem; }
+.answer-text { font-size: 0.95rem; color: var(--text); line-height: 1.6; }
+
+/* center elements */
+.center { text-align: center; }
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mt-3 { margin-top: 1.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+.mb-3 { margin-bottom: 1.5rem; }
+
+/* toast */
+.toast {
+  position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%) translateY(100px);
+  background: var(--card); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg); padding: 0.75rem 1.5rem;
+  font-size: 0.85rem; color: var(--text); z-index: 100;
+  transition: transform 500ms var(--ease-spring), opacity 300ms ease;
+  opacity: 0; pointer-events: none;
+}
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+/* feedback pills */
+.fb-row { display: flex; gap: 0.5rem; margin-top: 1rem; }
+.fb-pill {
+  flex: 1; padding: 0.6rem 0.5rem; border-radius: var(--radius-sm);
+  border: 1.5px solid #e8e8ec; background: var(--card);
+  font-family: var(--font); font-size: 0.8rem; font-weight: 500; color: var(--text2);
+  cursor: pointer; text-align: center;
+  transition: all 250ms var(--ease-out);
+}
+.fb-pill:hover { border-color: var(--accent); color: var(--text); }
+.fb-pill:active { transform: scale(0.95); }
+.fb-pill.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* choice btns as full-width */
+.choice-btn-row { display: flex; gap: 0.75rem; margin-top: 1rem; }
+.choice-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* utility */
+.fade-in { animation: fadeIn 400ms var(--ease-out) both; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.section-label { font-size: 0.7rem; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
+.title-xl { font-size: 3rem; font-weight: 200; letter-spacing: -0.05em; color: var(--text); }
+.title-lg { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; color: var(--text); }
+.title-md { font-size: 1.2rem; font-weight: 600; letter-spacing: -0.02em; color: var(--text); }
+.text-muted { color: var(--text2); }
+.text-sm { font-size: 0.85rem; }
+.text-xs { font-size: 0.75rem; }
+
+code {
+  display: block; background: #f5f5f7; border-radius: 8px; padding: 0.75rem;
+  font-family: var(--mono); font-size: 0.75rem; color: var(--text2);
+  margin-bottom: 0.5rem; white-space: pre-wrap; word-break: break-all;
+}
+
+/* checkbox custom */
+.chk-wrap { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin: 1rem 0; }
+.chk-wrap input { display: none; }
+.chk-box {
+  width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid #d0d0d5;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 200ms ease; flex-shrink: 0;
+}
+.chk-wrap input:checked + .chk-box { background: var(--accent); border-color: var(--accent); }
+.chk-wrap input:checked + .chk-box::after { content: "✓"; color: #fff; font-size: 0.75rem; font-weight: 700; }
+.chk-label { font-size: 0.85rem; color: var(--text2); }
+
+@media (max-width: 600px) {
+  #app { padding: 1.5rem 1rem 3rem; }
+  .choices { grid-template-columns: 1fr; }
+  .title-xl { font-size: 2.2rem; }
+  .btn-row { flex-direction: column; }
+  .fb-row { flex-wrap: wrap; }
+  .fb-pill { flex: 1 1 45%; }
+}
+</style>
+</head>
+<body>
+
+<canvas id="particles"></canvas>
+
+<div id="app">
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-line"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-dots" id="progressDots"></div>
+  </div>
+
+  <!-- Welcome -->
+  <div class="screen active" data-screen="welcome">
+    <div style="text-align:center;padding:4rem 0">
+      <div class="title-xl">BlackOut</div>
+      <p style="font-size:1rem;color:var(--text2);margin-top:0.75rem;font-weight:300;letter-spacing:-0.01em">Late-night decisions, morning clarity</p>
+      <p style="font-size:0.75rem;color:var(--text3);margin-top:2rem;max-width:300px;margin-left:auto;margin-right:auto;line-height:1.6;font-weight:300">
+        <span style="color:var(--text);font-weight:500">Reconstruct</span> your night · <span style="color:var(--text);font-weight:500">Recognize</span> patterns · <span style="color:var(--text);font-weight:500">Repair</span> memory
+      </p>
+      <p style="font-size:0.7rem;color:var(--text3);margin-top:0.75rem;font-weight:300">Paste text or load the demo. Screenshot support coming soon.</p>
+      <div style="margin-top:2.5rem">
+        <button class="btn btn-primary" onclick="goTo('choose_input')" style="max-width:200px">Begin</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Choose input -->
+  <div class="screen" data-screen="choose_input">
+    <div style="text-align:center;margin-bottom:2rem">
+      <div class="title-lg">Add evidence</div>
+      <p style="color:var(--text2);margin-top:0.3rem;font-size:0.9rem;font-weight:300">How would you like to start?</p>
+    </div>
+    <div class="choices">
+      <div class="choice-card" onclick="goTo('paste_evidence')">
+        <span class="choice-icon">📝</span>
+        <div class="choice-title">Paste a window</div>
+        <div class="choice-desc">Paste receipts, messages, notes from your night</div>
+      </div>
+      <div class="choice-card" onclick="loadDemo()">
+        <span class="choice-icon">🎲</span>
+        <div class="choice-title">Load demo</div>
+        <div class="choice-desc">See the full experience with three prepared windows</div>
+      </div>
+    </div>
+    <button class="btn btn-secondary" onclick="goTo('welcome')" style="margin-top:0.5rem">Back</button>
+  </div>
+
+  <!-- Paste evidence -->
+  <div class="screen" data-screen="paste_evidence">
+    <div style="text-align:center;margin-bottom:1.5rem">
+      <div class="title-md">Paste your evidence</div>
+      <p style="color:var(--text3);margin-top:0.25rem;font-size:0.85rem;font-weight:300">Receipts, messages, notes — anything from last night</p>
+    </div>
+    <textarea id="evidenceInput" rows="7" placeholder='Late-Night Window: Last night&#10;00:12 - ShopSwift receipt: novelty keyboard, $129.&#10;01:05 - Text to Priya: "I can totally redesign the slides by breakfast."'></textarea>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="goTo('choose_input')">Back</button>
+      <button class="btn btn-primary" onclick="rememberEvidence()">Remember</button>
+    </div>
+  </div>
+
+  <!-- Recall -->
+  <div class="screen" data-screen="recall">
+    <div style="text-align:center;margin-bottom:0.5rem">
+      <div class="title-md">Your night</div>
+      <p style="color:var(--text3);font-family:var(--mono);font-size:0.8rem;margin-top:0.2rem" id="recallWindowTime"></p>
+    </div>
+    <div id="recallTimeline"></div>
+    <div class="mt-3">
+      <button class="btn btn-primary" onclick="startFeedback()">Continue →</button>
+    </div>
+  </div>
+
+  <!-- Feedback -->
+  <div class="screen" data-screen="feedback">
+    <div style="text-align:center;margin-bottom:1rem">
+      <p style="font-size:0.8rem;color:var(--text3);margin-bottom:0.3rem;font-weight:400" id="fbCounter"></p>
+      <div class="title-md">How do you feel about this?</div>
+    </div>
+    <div id="fbCard"></div>
+    <div id="fbPills"></div>
+    <div id="fbNextWrapper" style="display:none;margin-top:1rem">
+      <button class="btn btn-primary" onclick="nextFeedback()">Next →</button>
+    </div>
+  </div>
+
+  <!-- Insights -->
+  <div class="screen" data-screen="insights">
+    <div style="text-align:center;margin-bottom:1.5rem">
+      <div class="title-md">Patterns</div>
+      <p style="color:var(--text2);margin-top:0.25rem;font-size:0.85rem;font-weight:300">Decisions that resemble past windows</p>
+    </div>
+    <div id="insightsContainer"></div>
+    <div class="mt-3">
+      <button class="btn btn-primary" onclick="goTo('ask_memory')">Continue →</button>
+    </div>
+  </div>
+
+  <!-- Ask memory -->
+  <div class="screen" data-screen="ask_memory">
+    <div style="text-align:center;margin-bottom:1.5rem">
+      <div class="title-md">Ask your memory</div>
+      <p style="color:var(--text2);margin-top:0.25rem;font-size:0.85rem;font-weight:300">Follow-up question about your night?</p>
+    </div>
+    <div id="askPrompts" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap"></div>
+    <input type="text" id="askInput" placeholder="What did I buy after midnight?" autocomplete="off">
+    <div class="mt-2">
+      <button class="btn btn-primary" onclick="askMemory()">Ask</button>
+    </div>
+    <div id="askAnswer" class="mt-2"></div>
+    <div class="btn-row mt-3">
+      <button class="btn btn-secondary" onclick="goTo('finish')">Skip</button>
+      <button class="btn btn-primary" onclick="goTo('finish')">Done →</button>
+    </div>
+  </div>
+
+  <!-- Finish -->
+  <div class="screen" data-screen="finish">
+    <div style="text-align:center;margin-bottom:2rem">
+      <div class="title-lg" style="margin-bottom:0.3rem">You're all caught up</div>
+      <p style="color:var(--text2);font-size:0.9rem;font-weight:300">Your night has been reviewed and remembered.</p>
+    </div>
+    <div id="finishForgetWrap">
+      <label class="chk-wrap">
+        <input type="checkbox" id="forgetCheck">
+        <span class="chk-box"></span>
+        <span class="chk-label">Yes, I want to forget this window</span>
+      </label>
+      <button class="btn btn-danger" id="forgetBtn" onclick="forgetWindow()" disabled>Forget this window</button>
+    </div>
+    <div id="forgetConfirm" style="display:none;margin-bottom:1rem"></div>
+    <div class="mt-3">
+      <button class="btn btn-secondary" onclick="resetApp()">Start over</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---- State ----
+let state = {
+  recall: null,
+  prompts: [],
+  feedbackIdx: 0,
+  askResult: null,
+};
+let currentStep = 'welcome';
+let transitioning = false;
+
+// ---- Particles ----
+(function initParticles() {
+  const c = document.getElementById('particles');
+  const ctx = c.getContext('2d');
+  let w, h, particles = [];
+  function resize() { w = c.width = window.innerWidth; h = c.height = window.innerHeight; }
+  window.addEventListener('resize', resize);
+  resize();
+  for (let i = 0; i < 30; i++) {
+    particles.push({
+      x: Math.random() * w, y: Math.random() * h,
+      r: 1.5 + Math.random() * 4,
+      dx: -0.2 + Math.random() * 0.4,
+      dy: -0.15 + Math.random() * 0.1,
+      o: 0.15 + Math.random() * 0.35,
+    });
+  }
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    for (const p of particles) {
+      p.x += p.dx; p.y += p.dy;
+      if (p.x < -20) p.x = w + 20; if (p.x > w + 20) p.x = -20;
+      if (p.y < -20) p.y = h + 20; if (p.y > h + 20) p.y = -20;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(212, 165, 116, ${p.o})`;
+      ctx.fill();
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ---- Utility ----
+function $(id) { return document.getElementById(id); }
+function $$(sel) { return document.querySelectorAll(sel); }
+
+function showToast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._hide);
+  t._hide = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function catColor(cat) {
+  const m = { purchase: '#d4a574', message: '#4a90d9', note: '#50c878', commit: '#9b59b6', plan: '#e74c8a', subscription: '#e74c3c' };
+  return m[cat] || '#8a8a8f';
+}
+
+function fbColor(lbl) {
+  const m = { Regret: '#c0392b', Fine: '#d4a574', Funny: '#8e44ad', 'Worth it': '#27ae60' };
+  return m[lbl] || '#8a8a8f';
+}
+
+// ---- Screen navigation ----
+const STEP_ORDER = ['welcome','choose_input','paste_evidence','recall','feedback','insights','ask_memory','finish'];
+const STEP_LABELS = { welcome:'', choose_input:'Add evidence', paste_evidence:'Paste', recall:'Review', feedback:'Rate', insights:'Patterns', ask_memory:'Ask', finish:'Finish' };
+
+function updateProgress(step) {
+  const idx = STEP_ORDER.indexOf(step);
+  if (idx <= 0) { $('progressWrap').classList.remove('visible'); return; }
+  $('progressWrap').classList.add('visible');
+  const pct = ((idx - 1) / (STEP_ORDER.length - 2)) * 100;
+  $('progressFill').style.width = pct + '%';
+  const dots = $('progressDots');
+  dots.innerHTML = STEP_ORDER.slice(1).map((s, i) => {
+    const pos = i + 1;
+    let cls = 'dot';
+    if (pos < idx) cls += ' done';
+    else if (pos === idx) cls += ' active';
+    const sep = i < STEP_ORDER.slice(1).length - 1 ? '<span class="dot-sep">·</span>' : '';
+    return `<span class="${cls}">${STEP_LABELS[s]}</span>${sep}`;
+  }).join('');
+}
+
+function goTo(step) {
+  if (transitioning) return;
+  transitioning = true;
+  const prev = document.querySelector('[data-screen="' + currentStep + '"]');
+  const next = document.querySelector('[data-screen="' + step + '"]');
+  if (!next) { transitioning = false; return; }
+
+  if (prev) { prev.classList.remove('screen-enter'); prev.classList.add('screen-exit'); }
+  next.style.display = 'block';
+  next.classList.remove('screen-exit');
+  // force reflow
+  void next.offsetWidth;
+  next.classList.add('screen-enter');
+
+  currentStep = step;
+  updateProgress(step);
+
+  setTimeout(() => {
+    if (prev) { prev.style.display = 'none'; prev.classList.remove('screen-exit'); }
+    transitioning = false;
+  }, 400);
+}
+
+// ---- API calls ----
+async function api(path, body) {
+  try {
+    const opts = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(path, opts);
+    return await r.json();
+  } catch (e) {
+    showToast('Network error. Is the server running?');
+    return { success: false, error: e.message };
+  }
+}
+
+// ---- Action handlers ----
+function renderRecall() {
+  const r = state.recall;
+  if (!r) return;
+  $('recallWindowTime').textContent = r.window.starts_at + ' → ' + r.window.ends_at;
+  const tl = $('recallTimeline');
+  if (!r.timeline || r.timeline.length === 0) {
+    tl.innerHTML = '<p style="text-align:center;color:var(--text3);padding:2rem 0">No decisions found</p>';
+    return;
+  }
+  tl.innerHTML = r.timeline.map((d, i) => {
+    const cc = catColor(d.category);
+    const sigs = (d.regret_signals||[]).map(s => `<span class="dc-sig">⚠ ${esc(s)}</span>`).join('');
+    const amt = d.amount ? `<span class="dc-amt">${esc(d.amount)}</span>` : '';
+    const fb = d.feedback_label ? `<span class="dc-fb" style="background:${fbColor(d.feedback_label)}18;color:${fbColor(d.feedback_label)};border:1px solid ${fbColor(d.feedback_label)}35">${esc(d.feedback_label)}</span>` : '';
+    return `<div class="dc" style="animation-delay:${i*60}ms">
+      <div class="dc-h"><div class="dc-l"><span class="dc-ts">${esc(d.timestamp)}</span><span class="dc-cat" style="background:${cc}18;color:${cc}">${esc(d.category)}</span><span class="dc-st">${esc(d.source_type)}</span></div>
+      <div class="dc-r">${amt}${fb}</div></div>
+      <div class="dc-s">${esc(d.summary)}</div>
+      ${sigs ? '<div class="dc-e">' + sigs + '</div>' : ''}
+      <div class="dc-ex">${esc(d.evidence_excerpt)}</div></div>`;
+  }).join('');
+  // 3D tilt on cards
+  document.querySelectorAll('.dc').forEach(el => {
+    el.classList.add('card-tilt');
+    el.addEventListener('mousemove', tiltCard);
+    el.addEventListener('mouseleave', resetTilt);
+  });
+}
+
+function tiltCard(e) {
+  const el = e.currentTarget;
+  const r = el.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width - 0.5;
+  const y = (e.clientY - r.top) / r.height - 0.5;
+  el.style.transform = `perspective(600px) rotateY(${x*6}deg) rotateX(${-y*6}deg)`;
+}
+function resetTilt(e) {
+  e.currentTarget.style.transform = 'perspective(600px) rotateY(0deg) rotateX(0deg)';
+}
+
+async function loadDemo() {
+  const r = await api('/api/load-demo');
+  if (!r.success) return;
+  state.recall = r.recall;
+  state.prompts = r.prompts || [];
+  renderRecall();
+  goTo('recall');
+  showToast('Loaded 3 late-night windows');
+}
+
+async function rememberEvidence() {
+  const el = $('evidenceInput');
+  const txt = el.value.trim();
+  if (!txt) { showToast('Paste some evidence first'); return; }
+  const r = await api('/api/remember', { evidence: txt });
+  if (!r.success) return;
+  state.recall = r.recall;
+  state.prompts = r.prompts || [];
+  renderRecall();
+  goTo('recall');
+}
+
+function startFeedback() {
+  if (!state.recall || !state.recall.timeline || state.recall.timeline.length === 0) {
+    if (state.recall && state.recall.pattern_insights && state.recall.pattern_insights.length > 0) {
+      renderInsights(); goTo('insights'); return;
+    }
+    goTo('ask_memory'); return;
+  }
+  state.feedbackIdx = 0;
+  renderFeedback();
+  goTo('feedback');
+}
+
+function renderFeedback() {
+  const d = state.recall.timeline[state.feedbackIdx];
+  const total = state.recall.timeline.length;
+  $('fbCounter').textContent = `Decision ${state.feedbackIdx + 1} of ${total}`;
+  const cc = catColor(d.category);
+  const sigs = (d.regret_signals||[]).map(s => `<span class="dc-sig">⚠ ${esc(s)}</span>`).join('');
+  const amt = d.amount ? `<span class="dc-amt">${esc(d.amount)}</span>` : '';
+  const fb = d.feedback_label ? `<span class="dc-fb" style="background:${fbColor(d.feedback_label)}18;color:${fbColor(d.feedback_label)};border:1px solid ${fbColor(d.feedback_label)}35">${esc(d.feedback_label)}</span>` : '';
+  $('fbCard').innerHTML = `<div class="card card-tilt" id="fbTiltCard"><div class="dc-h"><div class="dc-l"><span class="dc-ts">${esc(d.timestamp)}</span><span class="dc-cat" style="background:${cc}18;color:${cc}">${esc(d.category)}</span><span class="dc-st">${esc(d.source_type)}</span></div><div class="dc-r">${amt}${fb}</div></div><div class="dc-s">${esc(d.summary)}</div>${sigs ? '<div class="dc-e">' + sigs + '</div>' : ''}<div class="dc-ex">${esc(d.evidence_excerpt)}</div></div>`;
+
+  // 3D tilt
+  const tiltEl = $('fbTiltCard');
+  if (tiltEl) {
+    tiltEl.addEventListener('mousemove', tiltCard);
+    tiltEl.addEventListener('mouseleave', resetTilt);
+  }
+
+  const already = d.feedback_label !== null;
+  if (already) {
+    $('fbPills').innerHTML = '';
+    $('fbNextWrapper').style.display = 'block';
+  } else {
+    $('fbNextWrapper').style.display = 'none';
+    const labels = ['Regret', 'Fine', 'Funny', 'Worth it'];
+    $('fbPills').innerHTML = `<div class="fb-row">${labels.map(l => `<div class="fb-pill" onclick="applyFeedback('${l}')" style="color:${fbColor(l)};border-color:${fbColor(l)}35">${l}</div>`).join('')}</div><button class="btn btn-secondary" onclick="skipFeedback()" style="margin-top:0.5rem">Skip</button>`;
+  }
+}
+
+async function applyFeedback(label) {
+  const d = state.recall.timeline[state.feedbackIdx];
+  const r = await api('/api/feedback', { evidence_text: d.evidence_excerpt, label });
+  if (!r.success) return;
+  state.recall = r.recall;
+  renderFeedback();
+  showToast('Marked as ' + label);
+}
+
+function skipFeedback() {
+  state.feedbackIdx++;
+  if (state.feedbackIdx >= state.recall.timeline.length) {
+    if (state.recall.pattern_insights && state.recall.pattern_insights.length > 0) {
+      renderInsights(); goTo('insights'); return;
+    }
+    goTo('ask_memory'); return;
+  }
+  renderFeedback();
+}
+
+function nextFeedback() {
+  state.feedbackIdx++;
+  if (state.feedbackIdx >= state.recall.timeline.length) {
+    if (state.recall.pattern_insights && state.recall.pattern_insights.length > 0) {
+      renderInsights(); goTo('insights'); return;
+    }
+    goTo('ask_memory'); return;
+  }
+  renderFeedback();
+}
+
+function renderInsights() {
+  const container = $('insightsContainer');
+  if (!state.recall || !state.recall.pattern_insights || state.recall.pattern_insights.length === 0) {
+    container.innerHTML = '<p style="text-align:center;color:var(--text3);padding:2rem 0">No patterns found</p>';
+    return;
+  }
+  container.innerHTML = state.recall.pattern_insights.map((ins, i) => {
+    const isConfirmed = ins.status === 'confirmed regret';
+    const sc = isConfirmed ? '#e74c3c' : '#d4a574';
+    const icon = isConfirmed ? '🔴' : '🟡';
+    const priors = (ins.related_prior_decisions||[]).map(p => {
+      const parts = [p.timestamp, p.summary];
+      if (p.amount) parts.push(`(${p.amount})`);
+      const names = (p.people_or_vendors||[]).join(', ');
+      if (names) parts.push(names);
+      if (p.feedback_label) parts.push(p.feedback_label);
+      return `<div style="background:#f5f5f7;border-radius:8px;padding:0.75rem;margin:0.5rem 0 0.5rem 1rem;font-size:0.8rem;color:var(--text3);font-family:var(--mono)">${esc(parts.join(' - '))}</div>`;
+    }).join('');
+    return `<div class="insight" style="animation-delay:${i*80}ms;border-left:3px solid ${sc}">
+      <div class="insight-h"><span>${icon}</span><span class="insight-badge" style="background:${sc}15;color:${sc};border:1px solid ${sc}25">${esc(ins.status)}</span></div>
+      <div class="insight-s">${esc(ins.summary)}</div>${priors}</div>`;
+  }).join('');
+}
+
+function renderAskPrompts() {
+  const container = $('askPrompts');
+  if (!state.prompts || state.prompts.length === 0) {
+    container.innerHTML = ''; return;
+  }
+  container.innerHTML = state.prompts.map((p, i) =>
+    `<button class="btn btn-secondary" onclick="askPrompt(${i})" style="flex:1;padding:0.5rem;font-size:0.8rem;min-width:0">${esc(p)}</button>`
+  ).join('');
+}
+
+async function askPrompt(i) {
+  const q = state.prompts[i];
+  if (!q) return;
+  const r = await api('/api/ask', { question: q });
+  if (!r.success) return;
+  state.askResult = r;
+  renderAskAnswer();
+}
+
+async function askMemory() {
+  const el = $('askInput');
+  const q = el.value.trim();
+  if (!q) { showToast('Enter a question first'); return; }
+  const r = await api('/api/ask', { question: q });
+  if (!r.success) return;
+  state.askResult = r;
+  renderAskAnswer();
+  el.value = '';
+}
+
+function renderAskAnswer() {
+  if (!state.askResult) { $('askAnswer').innerHTML = ''; return; }
+  const evHtml = (state.askResult.evidence||[]).map(e => `<code>${esc(e)}</code>`).join('');
+  $('askAnswer').innerHTML = `<div class="answer-box"><div class="answer-label">Answer</div><div class="answer-text">${esc(state.askResult.answer)}</div></div>${evHtml}`;
+}
+
+async function forgetWindow() {
+  if (!$('forgetCheck').checked) return;
+  const mk = state.recall.window.memory_key;
+  const r = await api('/api/forget', { memory_key: mk });
+  if (!r.success) return;
+  state.recall = r.recall;
+  $('finishForgetWrap').style.display = 'none';
+  const confirmEl = $('forgetConfirm');
+  confirmEl.style.display = 'block';
+  confirmEl.innerHTML = `<div style="background:rgba(46,204,113,0.06);border:1px solid rgba(46,204,113,0.15);border-radius:var(--radius);padding:1rem;color:#2ecc71;font-size:0.9rem">Forgot window ${esc(state.recall.window.starts_at)} → ${esc(state.recall.window.ends_at)}</div>`;
+}
+
+async function resetApp() {
+  await api('/api/reset');
+  state = { recall: null, prompts: [], feedbackIdx: 0, askResult: null };
+  $('forgetCheck').checked = false;
+  $('forgetBtn').disabled = true;
+  $('finishForgetWrap').style.display = 'block';
+  $('forgetConfirm').style.display = 'none';
+  $('askAnswer').innerHTML = '';
+  $('evidenceInput').value = '';
+  $('askInput').value = '';
+  goTo('welcome');
+}
+
+// ---- Bootstrap ----
+document.addEventListener('DOMContentLoaded', async () => {
+  const r = await api('/api/prompts', null);
+  if (r.success) state.prompts = r.prompts || [];
+  renderAskPrompts();
+  updateProgress('welcome');
+
+  // forget checkbox
+  $('forgetCheck').addEventListener('change', function() {
+    $('forgetBtn').disabled = !this.checked;
+  });
+
+  // enter key on ask input
+  $('askInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') askMemory();
+  });
+
+  // enter key on evidence input
+  $('evidenceInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && e.metaKey) rememberEvidence();
+    if (e.key === 'Enter' && e.ctrlKey) rememberEvidence();
+  });
+});
+</script>
+</body>
+</html>

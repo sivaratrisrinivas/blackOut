@@ -84,8 +84,8 @@ The narrative is built around three jobs:
 
 The fastest way to see the full product is:
 
-1. Run `python3 -m streamlit run app.py`.
-2. Click **Load Seed Demo Mode** — three Late-Night Windows load and Morning-After Recall runs automatically.
+1. Run `python3 server.py`.
+2. Open `http://localhost:5000` and click **Load demo** — three Late-Night Windows load and Morning-After Recall runs automatically.
 3. Review the Decision timeline with timestamps, categories, regret signals, and Evidence Excerpts.
 4. Notice Pattern insights connecting current decisions to prior windows.
 5. Apply a Feedback Label (Regret, Fine, Funny, Worth it) to any Decision.
@@ -217,10 +217,10 @@ export BLACKOUT_RUN_COGNEE_SMOKE=1
 
 `COGNEE_API_KEY` and `LLM_API_KEY` are read from the environment only. Do not put secret values in tracked files.
 
-Run the Streamlit app:
+Run the Flask app:
 
 ```bash
-python3 -m streamlit run app.py
+python3 server.py
 ```
 
 Run tests:

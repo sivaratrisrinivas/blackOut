@@ -1,49 +1,109 @@
+import json
 from pathlib import Path
 
-from streamlit.testing.v1 import AppTest
+import pytest
+from server import app as flask_app
 
 
-def test_deterministic_demo_path_loads_seed_recalls_applies_feedback_and_forgets():
-    app = AppTest.from_file("app.py")
-
-    app.run()
-
-    app.button[1].click().run()
-
-    assert any(
-        "Decision timeline" in subheader.value for subheader in app.subheader
-    )
-
-    app.button[4].click().run()
-
-    assert any(
-        "Feedback Label: Regret" in success.value for success in app.success
-    )
-
-    app.checkbox[0].check().run()
-    app.button("forget-current-window").click().run()
-
-    assert any(
-        "Forgot Late-Night Window" in success.value for success in app.success
-    )
+@pytest.fixture
+def client():
+    with flask_app.test_client() as c:
+        c.post("/api/reset")
+        yield c
 
 
-def test_app_shows_reconstruct_recognize_repair_narrative_on_first_screen():
-    app = AppTest.from_file("app.py")
+class TestHTMLPage:
+    """Tests for the Flask-served HTML page content."""
 
-    app.run()
+    def test_welcome_page_contains_narrative_copy(self, client):
+        resp = client.get("/")
+        html = resp.data.decode()
+        assert resp.status_code == 200
+        assert "Reconstruct" in html
+        assert "Recognize" in html
+        assert "Repair" in html
 
-    page_text = " ".join(
-        element.value for element in list(app.title) + list(app.markdown)
-    )
-    assert "Reconstruct" in page_text
-    assert "Recognize" in page_text
-    assert "Repair" in page_text
+    def test_welcome_page_avoids_out_of_scope_integrations(self, client):
+        resp = client.get("/")
+        html = resp.data.decode().lower()
+        out_of_scope = ["oauth", "sign in", "connect your", "link your", "log in"]
+        for phrase in out_of_scope:
+            assert phrase not in html, f"Found out-of-scope phrase: {phrase}"
+
+    def test_welcome_page_defers_screenshot_as_secondary(self, client):
+        resp = client.get("/")
+        html = resp.data.decode().lower()
+        assert "screenshot" in html
+        assert "coming soon" in html
+
+    def test_copy_avoids_shame_and_diagnosis_language(self, client):
+        resp = client.get("/")
+        html = resp.data.decode().lower()
+        forbidden = ["shame", "guilt", "bad decision", "mistake", "diagnosis", "patholog"]
+        for word in forbidden:
+            assert word not in html, f"Found forbidden word: {word}"
+
+
+class TestAPIFlow:
+    """Tests for the Flask API endpoints."""
+
+    def test_load_demo_returns_timeline_with_decisions(self, client):
+        resp = client.post("/api/load-demo")
+        data = resp.get_json()
+        assert data["success"] is True
+        decisions = data["recall"]["timeline"]
+        assert any("espresso" in d["summary"] for d in decisions)
+
+    def test_full_flow_feedback_and_forget(self, client):
+        resp = client.post("/api/load-demo")
+        data = resp.get_json()
+        assert data["success"] is True
+        recall = data["recall"]
+        assert len(recall["timeline"]) > 0
+
+        first = recall["timeline"][0]
+        fb_resp = client.post("/api/feedback", json={
+            "evidence_text": first["evidence_excerpt"],
+            "label": "Regret",
+        })
+        fb_data = fb_resp.get_json()
+        assert fb_data["success"] is True
+        assert fb_data["recall"]["timeline"][0]["feedback_label"] == "Regret"
+
+        memory_key = recall["window"]["memory_key"]
+        forget_resp = client.post("/api/forget", json={"memory_key": memory_key})
+        forget_data = forget_resp.get_json()
+        assert forget_data["success"] is True
+        assert forget_data.get("forgotten") is True
+
+    def test_ask_memory_returns_answer(self, client):
+        client.post("/api/load-demo")
+        resp = client.post("/api/ask", json={
+            "question": "What did I buy after midnight?"
+        })
+        data = resp.get_json()
+        assert data["success"] is True
+        assert "espresso" in data["answer"].lower()
+
+    def test_prompts_endpoint_returns_suggestions(self, client):
+        client.post("/api/load-demo")
+        resp = client.get("/api/prompts")
+        data = resp.get_json()
+        assert data["success"] is True
+        assert len(data["prompts"]) > 0
+
+    def test_forget_marks_window_as_forgotten(self, client):
+        data = client.post("/api/load-demo").get_json()
+        memory_key = data["recall"]["window"]["memory_key"]
+
+        resp = client.post("/api/forget", json={"memory_key": memory_key})
+        result = resp.get_json()
+        assert result["success"] is True
+        assert result["forgotten"] is True
 
 
 def test_readme_covers_hackathon_submission_narrative():
     readme = (Path(__file__).resolve().parent.parent / "README.md").read_text()
-
     assert "## Hackathon Submission" in readme
     assert "Reconstruct" in readme
     assert "Recognize" in readme
@@ -52,106 +112,3 @@ def test_readme_covers_hackathon_submission_narrative():
     assert "COGNEE_BASE_URL" in readme
     assert "COGNEE_API_KEY" in readme
     assert "LLM_API_KEY" in readme
-
-
-def test_app_does_not_imply_out_of_scope_integrations():
-    app = AppTest.from_file("app.py")
-
-    app.run()
-
-    page_text = " ".join(
-        element.value
-        for element in list(app.title) + list(app.markdown) + list(app.caption)
-    ).lower()
-
-    out_of_scope = ["oauth", "sign in", "connect your", "link your", "log in"]
-    for phrase in out_of_scope:
-        assert phrase not in page_text, f"Found out-of-scope phrase: {phrase}"
-
-
-def test_app_defers_screenshot_evidence_as_secondary_path():
-    app = AppTest.from_file("app.py")
-
-    app.run()
-
-    page_text = " ".join(
-        element.value
-        for element in list(app.title) + list(app.markdown) + list(app.caption)
-    ).lower()
-
-    assert "screenshot" in page_text
-    assert "coming soon" in page_text or "secondary" in page_text
-
-
-def test_app_copy_avoids_shame_judgment_and_diagnosis_language():
-    app = AppTest.from_file("app.py")
-
-    app.run()
-    app.button[1].click().run()
-
-    page_text = " ".join(
-        element.value
-        for element in list(app.title) + list(app.markdown) + list(app.caption)
-    ).lower()
-
-    forbidden = ["shame", "guilt", "bad decision", "mistake", "diagnosis", "patholog"]
-    for word in forbidden:
-        assert word not in page_text, f"Found forbidden word: {word}"
-
-
-def test_app_load_seed_demo_mode_shows_decision_timeline_immediately():
-    app = AppTest.from_file("app.py")
-
-    app.run()
-    app.button[1].click().run()
-
-    assert any(
-        "Decision timeline" in subheader.value for subheader in app.subheader
-    )
-
-
-def test_app_shows_clear_message_when_cognee_credentials_are_missing(
-    monkeypatch, tmp_path
-):
-    monkeypatch.setenv("BLACKOUT_MEMORY_ADAPTER", "cognee")
-    monkeypatch.delenv("LLM_API_KEY", raising=False)
-    monkeypatch.delenv("COGNEE_BASE_URL", raising=False)
-    monkeypatch.delenv("COGNEE_API_KEY", raising=False)
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-
-    app = AppTest.from_file("app.py")
-
-    app.run()
-
-    assert any("LLM_API_KEY" in error.value for error in app.error)
-
-
-def test_app_displays_ask_your_memory_answer_from_a_suggested_prompt():
-    app = AppTest.from_file("app.py")
-
-    app.run()
-    app.button[1].click().run()
-    app.button("ask-prompt-0").click().run()
-
-    assert any(
-        "You bought espresso machine from BeanForge at 03:12 for $249."
-        in markdown.value
-        for markdown in app.markdown
-    )
-    assert any(
-        "03:12 - BeanForge receipt: espresso machine, $249." in code.value
-        for code in app.code
-    )
-
-
-def test_app_clears_displayed_ask_your_memory_answer_after_forgetting_window():
-    app = AppTest.from_file("app.py")
-
-    app.run()
-    app.button[1].click().run()
-    app.button("ask-prompt-0").click().run()
-
-    app.checkbox[0].check().run()
-    app.button("forget-current-window").click().run()
-
-    assert all("espresso machine" not in markdown.value for markdown in app.markdown)
