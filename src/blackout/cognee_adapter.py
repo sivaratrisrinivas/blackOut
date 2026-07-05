@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shlex
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -53,10 +54,12 @@ class CogneeHttpClient:
         base_url: str,
         api_key: str,
         urlopen: Any = urllib.request.urlopen,
+        timeout_seconds: int = 10,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._urlopen = urlopen
+        self._timeout_seconds = timeout_seconds
 
     def remember(
         self,
@@ -220,7 +223,7 @@ class CogneeHttpClient:
             },
         )
         try:
-            with self._urlopen(request, timeout=120) as response:
+            with self._urlopen(request, timeout=self._timeout_seconds) as response:
                 response_body = response.read().decode("utf-8")
         except urllib.error.HTTPError as error:
             error_body = error.read().decode("utf-8", errors="replace")
@@ -233,6 +236,11 @@ class CogneeHttpClient:
             raise CogneeHttpError(
                 None,
                 f"Cognee HTTP request failed: {_short_error(str(error.reason))}",
+            ) from error
+        except TimeoutError as error:
+            raise CogneeHttpError(
+                None,
+                f"Cognee HTTP request timed out: {_short_error(str(error))}",
             ) from error
 
         if not response_body:
@@ -255,14 +263,24 @@ class RealCogneeMemoryAdapter:
     ) -> None:
         self._cognee = cognee_client
         self._dataset_prefix = dataset_prefix
+        self._remembered_by_memory_key: dict[str, RememberCall] = {}
+        self._feedback_by_memory_key: dict[str, dict[str, FeedbackLabel]] = {}
+        self._forgotten_memory_keys: set[str] = set()
+        self._background_errors: list[Exception] = []
 
     def remember_late_night_window(
         self, window: LateNightWindow, primary_demo_evidence: str
     ) -> None:
         dataset_name = self._dataset_name_for(window)
+        self._forgotten_memory_keys.discard(window.memory_key)
+        self._remembered_by_memory_key[window.memory_key] = RememberCall(
+            window=window,
+            primary_demo_evidence=primary_demo_evidence,
+        )
         self._remember_document(
             _cognee_document_for(window, primary_demo_evidence),
             dataset_name=dataset_name,
+            run_in_background=True,
         )
         self._remember_document(
             _record_document(
@@ -273,10 +291,11 @@ class RealCogneeMemoryAdapter:
                 }
             ),
             dataset_name=self._index_dataset_name(),
+            run_in_background=True,
         )
 
     def recall_morning_after(self) -> RecallResult:
-        remembered_calls = self._remembered_calls_from_cognee()
+        remembered_calls = self._remembered_calls()
         if not remembered_calls:
             return RecallResult(
                 late_night_window=LateNightWindow(
@@ -320,13 +339,16 @@ class RealCogneeMemoryAdapter:
 
     def ask_memory(self, question: str) -> AskMemoryResult:
         question_lower = question.lower()
-        remembered_calls = self._remembered_calls_from_cognee()
-        self._search(
-            f"Ask Your Memory: {question}",
-            dataset_names=[
-                self._dataset_name_for(call.window) for call in remembered_calls
-            ],
-        )
+        remembered_calls = self._remembered_calls()
+        try:
+            self._search(
+                f"Ask Your Memory: {question}",
+                dataset_names=[
+                    self._dataset_name_for(call.window) for call in remembered_calls
+                ],
+            )
+        except (CogneeHttpError, TimeoutError):
+            pass
         remembered_decisions = [
             decision
             for call in remembered_calls
@@ -366,6 +388,9 @@ class RealCogneeMemoryAdapter:
     def improve_decision_memory(
         self, decision: Decision, feedback_label: FeedbackLabel
     ) -> None:
+        window = self._window_for_decision(decision)
+        if window is not None:
+            self._remember_feedback_locally(window, decision, feedback_label)
         improve_call = ImproveMemoryCall(decision=decision, feedback_label=feedback_label)
         self._remember_document(
             _feedback_document_for(improve_call),
@@ -380,16 +405,19 @@ class RealCogneeMemoryAdapter:
         feedback_label: FeedbackLabel,
     ) -> None:
         dataset_name = self._dataset_name_for(window)
+        self._remember_feedback_locally(window, decision, feedback_label)
         improve_call = ImproveMemoryCall(decision=decision, feedback_label=feedback_label)
         self._remember_document(
             _feedback_document_for(improve_call),
             dataset_name=dataset_name,
             run_in_background=True,
         )
-        self._improve_dataset(dataset_name)
 
     def forget_late_night_window(self, window: LateNightWindow) -> None:
         dataset_name = self._dataset_name_for(window)
+        self._forgotten_memory_keys.add(window.memory_key)
+        self._remembered_by_memory_key.pop(window.memory_key, None)
+        self._feedback_by_memory_key.pop(window.memory_key, None)
         self._remember_document(
             _record_document(
                 {
@@ -410,10 +438,26 @@ class RealCogneeMemoryAdapter:
         return f"{self._dataset_prefix}_index"
 
     def _dataset_name_for_decision(self, decision: Decision) -> str:
-        for call in self._remembered_calls_from_cognee():
+        for call in self._remembered_calls():
             if decision.evidence_excerpt.text in call.primary_demo_evidence:
                 return self._dataset_name_for(call.window)
         return f"{self._dataset_prefix}_feedback"
+
+    def _window_for_decision(self, decision: Decision) -> LateNightWindow | None:
+        for call in self._remembered_calls():
+            if decision.evidence_excerpt.text in call.primary_demo_evidence:
+                return call.window
+        return None
+
+    def _remember_feedback_locally(
+        self,
+        window: LateNightWindow,
+        decision: Decision,
+        feedback_label: FeedbackLabel,
+    ) -> None:
+        self._feedback_by_memory_key.setdefault(window.memory_key, {})[
+            decision.evidence_excerpt.text
+        ] = feedback_label
 
     def _search(
         self,
@@ -438,6 +482,35 @@ class RealCogneeMemoryAdapter:
         )
 
     def _remember_document(
+        self,
+        data: str,
+        dataset_name: str,
+        run_in_background: bool = False,
+    ) -> Any:
+        if run_in_background and isinstance(self._cognee, CogneeHttpClient):
+            self._remember_document_later(data, dataset_name)
+            return None
+
+        return self._remember_document_now(
+            data,
+            dataset_name=dataset_name,
+            run_in_background=run_in_background,
+        )
+
+    def _remember_document_later(self, data: str, dataset_name: str) -> None:
+        def remember_in_background() -> None:
+            try:
+                self._remember_document_now(
+                    data,
+                    dataset_name=dataset_name,
+                    run_in_background=True,
+                )
+            except Exception as error:
+                self._background_errors.append(error)
+
+        threading.Thread(target=remember_in_background, daemon=True).start()
+
+    def _remember_document_now(
         self,
         data: str,
         dataset_name: str,
@@ -472,6 +545,16 @@ class RealCogneeMemoryAdapter:
             dataset_name,
             dataset_name_keyword="dataset",
         )
+
+    def _remembered_calls(self) -> list[RememberCall]:
+        remembered_calls = [
+            call
+            for memory_key, call in self._remembered_by_memory_key.items()
+            if memory_key not in self._forgotten_memory_keys
+        ]
+        if remembered_calls:
+            return remembered_calls
+        return self._remembered_calls_from_cognee()
 
     def _remembered_calls_from_cognee(self) -> list[RememberCall]:
         index_records = self._records_from_cognee_dataset(self._index_dataset_name())
@@ -517,6 +600,10 @@ class RealCogneeMemoryAdapter:
     def _feedback_by_evidence_excerpt(
         self, window: LateNightWindow
     ) -> dict[str, FeedbackLabel]:
+        if window.memory_key in self._feedback_by_memory_key:
+            return dict(self._feedback_by_memory_key[window.memory_key])
+        if window.memory_key in self._remembered_by_memory_key:
+            return {}
         records = self._records_from_cognee_dataset(self._dataset_name_for(window))
         feedback: dict[str, FeedbackLabel] = {}
         for record in records:

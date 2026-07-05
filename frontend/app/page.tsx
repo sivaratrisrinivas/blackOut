@@ -95,11 +95,26 @@ async function postApi<T>(path: string, body?: unknown): Promise<ApiResult<T>> {
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
-  const result = await response.json();
-  if (!response.ok && result && typeof result === "object") {
-    return { success: false, ...result };
+  const responseText = await response.text();
+  let result: Record<string, unknown> = {};
+  if (responseText) {
+    try {
+      const parsed: unknown = JSON.parse(responseText);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        result = parsed as Record<string, unknown>;
+      }
+    } catch {
+      result = {};
+    }
   }
-  return result;
+  if (!response.ok) {
+    const error =
+      "error" in result && typeof result.error === "string"
+        ? result.error
+        : `BlackOut API returned ${response.status}.`;
+    return { success: false, ...result, error } as ApiResult<T>;
+  }
+  return result as ApiResult<T>;
 }
 
 function categoryTone(category: string) {

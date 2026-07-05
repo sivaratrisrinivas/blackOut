@@ -1,8 +1,11 @@
+import time
+
 import pytest
 from urllib.error import HTTPError
 
 from blackout.cognee_adapter import (
     CogneeConfigurationError,
+    CogneeHttpError,
     CogneeHttpClient,
     RealCogneeMemoryAdapter,
     _record_document,
@@ -15,6 +18,7 @@ from blackout.workflow import FakeMemoryAdapter, LateNightWindow
 class RecordingCogneeClient:
     def __init__(self):
         self.calls = []
+        self.remember_background_flags = []
         self.data_by_dataset = {}
         self.deleted_datasets = set()
 
@@ -22,8 +26,9 @@ class RecordingCogneeClient:
         self.calls.append(("add", data, dataset_name))
         self.data_by_dataset.setdefault(dataset_name, []).append(data)
 
-    def remember(self, data, dataset_name=None):
+    def remember(self, data, dataset_name=None, run_in_background=False):
         self.calls.append(("remember", data, dataset_name))
+        self.remember_background_flags.append(run_in_background)
         self.data_by_dataset.setdefault(dataset_name, []).append(data)
 
     def cognify(self, dataset_name=None):
@@ -87,6 +92,14 @@ class SdkShapedCogneeClient:
     def forget(self, *, dataset=None, everything=False, memory_only=False):
         self.calls.append(("forget", dataset, everything, memory_only))
         self.deleted_datasets.add(dataset)
+
+
+class SearchTimeoutCogneeClient(RecordingCogneeClient):
+    def recall(self, query_text, query_type=None, datasets=None):
+        self.calls.append(("recall", query_text, query_type, datasets))
+        if str(query_text).startswith("Ask Your Memory:"):
+            raise TimeoutError("Cognee recall timed out")
+        return self.search(query_text, query_type=query_type, datasets=datasets)
 
 
 def test_memory_adapter_defaults_to_cognee_and_reports_missing_credentials(monkeypatch):
@@ -186,6 +199,7 @@ def test_memory_adapter_can_load_cognee_config_from_bashrc_exports(
 
 def test_cognee_http_client_calls_cloud_endpoints_without_printing_secrets():
     requests = []
+    timeouts = []
 
     class Response:
         headers = {"Content-Type": "application/json"}
@@ -201,6 +215,7 @@ def test_cognee_http_client_calls_cloud_endpoints_without_printing_secrets():
 
     def urlopen(request, timeout):
         requests.append(request)
+        timeouts.append(timeout)
         return Response()
 
     client = CogneeHttpClient(
@@ -222,6 +237,23 @@ def test_cognee_http_client_calls_cloud_endpoints_without_printing_secrets():
     ]
     assert all(request.headers["X-api-key"] == "not-shown" for request in requests)
     assert b'filename="blackout-memory.txt"' in requests[0].data
+    assert set(timeouts) == {10}
+
+
+def test_cognee_http_client_converts_socket_timeouts_to_http_errors():
+    def urlopen(request, timeout):
+        raise TimeoutError("The read operation timed out")
+
+    client = CogneeHttpClient(
+        base_url="https://example.invalid",
+        api_key="not-shown",
+        urlopen=urlopen,
+    )
+
+    with pytest.raises(CogneeHttpError) as error:
+        client.recall("find this", query_type="GRAPH_COMPLETION", datasets=["blackout"])
+
+    assert "timed out" in str(error.value).lower()
 
 
 def test_cognee_http_client_reads_raw_dataset_data_by_name():
@@ -368,9 +400,62 @@ def test_real_cognee_adapter_remembers_evidence_as_a_separable_late_night_window
     assert "00:12 - ShopSwift receipt: novelty keyboard, $129." in "\n".join(
         cognee.data_by_dataset["blackout_late_night_window_2026_07_04"]
     )
+    assert cognee.remember_background_flags == [True, True]
 
 
-def test_real_cognee_adapter_recalls_morning_after_result_through_cognee_search():
+def test_real_cognee_adapter_defers_http_background_remember_uploads():
+    requests = []
+
+    class Response:
+        headers = {"Content-Type": "application/json"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def read(self):
+            return b'{"ok": true}'
+
+    def urlopen(request, timeout):
+        requests.append(request.full_url)
+        time.sleep(0.2)
+        return Response()
+
+    cognee = CogneeHttpClient(
+        base_url="https://example.invalid",
+        api_key="not-shown",
+        urlopen=urlopen,
+    )
+    adapter = RealCogneeMemoryAdapter(cognee_client=cognee)
+    window = LateNightWindow(
+        label="Pasted late-night window",
+        starts_at="2026-07-04T00:00:00+05:30",
+        ends_at="2026-07-04T05:00:00+05:30",
+        memory_key="late-night-window:2026-07-04",
+    )
+
+    started_at = time.perf_counter()
+    adapter.remember_late_night_window(
+        window=window,
+        primary_demo_evidence="00:12 - ShopSwift receipt: novelty keyboard, $129.",
+    )
+    elapsed = time.perf_counter() - started_at
+
+    assert elapsed < 0.1
+
+    deadline = time.perf_counter() + 1
+    while len(requests) < 2 and time.perf_counter() < deadline:
+        time.sleep(0.01)
+
+    assert requests == [
+        "https://example.invalid/api/v1/remember",
+        "https://example.invalid/api/v1/remember",
+    ]
+
+
+def test_real_cognee_adapter_recalls_morning_after_result_from_current_process_memory():
     cognee = RecordingCogneeClient()
     adapter = RealCogneeMemoryAdapter(cognee_client=cognee)
     window = LateNightWindow(
@@ -389,10 +474,7 @@ def test_real_cognee_adapter_recalls_morning_after_result_through_cognee_search(
 
     result = adapter.recall_morning_after()
 
-    assert any(
-        call[0] == "recall" and call[3] == ["blackout_index"]
-        for call in cognee.calls
-    )
+    assert not any(call[0] == "recall" for call in cognee.calls)
     assert result.late_night_window == window
     assert [decision.summary for decision in result.timeline] == [
         "Bought novelty keyboard from ShopSwift",
@@ -424,6 +506,29 @@ def test_real_cognee_adapter_answers_ask_your_memory_through_cognee_search():
     assert answer.evidence == [
         "00:12 - ShopSwift receipt: novelty keyboard, $129.",
     ]
+
+
+def test_real_cognee_adapter_answers_ask_your_memory_when_best_effort_search_times_out():
+    cognee = SearchTimeoutCogneeClient()
+    adapter = RealCogneeMemoryAdapter(cognee_client=cognee)
+    window = LateNightWindow(
+        label="Pasted late-night window",
+        starts_at="2026-07-04T00:00:00+05:30",
+        ends_at="2026-07-04T05:00:00+05:30",
+        memory_key="late-night-window:2026-07-04",
+    )
+    adapter.remember_late_night_window(
+        window=window,
+        primary_demo_evidence="00:12 - ShopSwift receipt: novelty keyboard, $129.",
+    )
+
+    answer = adapter.ask_memory("What did I buy after midnight?")
+
+    assert any(
+        call[0] == "recall" and "What did I buy after midnight?" in call[1]
+        for call in cognee.calls
+    )
+    assert answer.answer == "You bought novelty keyboard from ShopSwift at 00:12 for $129."
 
 
 def test_real_cognee_adapter_recalls_memory_saved_by_a_previous_adapter_instance():
@@ -467,6 +572,29 @@ def test_real_cognee_adapter_improves_memory_from_feedback_label():
 
     assert ("improve", "blackout_late_night_window_2026_07_04") in cognee.calls
     assert updated_result.timeline[0].feedback_label == "Regret"
+
+
+def test_real_cognee_adapter_records_known_window_feedback_without_sync_improve():
+    cognee = RecordingCogneeClient()
+    adapter = RealCogneeMemoryAdapter(cognee_client=cognee)
+    window = LateNightWindow(
+        label="Pasted late-night window",
+        starts_at="2026-07-04T00:00:00+05:30",
+        ends_at="2026-07-04T05:00:00+05:30",
+        memory_key="late-night-window:2026-07-04",
+    )
+    adapter.remember_late_night_window(
+        window=window,
+        primary_demo_evidence="00:12 - ShopSwift receipt: novelty keyboard, $129.",
+    )
+    decision = adapter.recall_morning_after().timeline[0]
+
+    adapter.improve_decision_memory_for_window(window, decision, "Fine")
+    updated_result = adapter.recall_morning_after()
+
+    assert ("improve", "blackout_late_night_window_2026_07_04") not in cognee.calls
+    assert cognee.remember_background_flags[-1] is True
+    assert updated_result.timeline[0].feedback_label == "Fine"
 
 
 def test_real_cognee_adapter_forgets_late_night_window_dataset():

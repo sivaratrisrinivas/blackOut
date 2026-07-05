@@ -1,5 +1,7 @@
 import sys
+from ipaddress import ip_address
 from pathlib import Path
+from urllib.parse import urlparse
 
 from flask import Flask, jsonify, request
 
@@ -22,17 +24,42 @@ ALLOWED_FRONTEND_ORIGINS = {
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 }
+ALLOWED_FRONTEND_PORTS = {3000, 3001}
 
 
 @app.after_request
 def add_local_frontend_cors_headers(response):
     origin = request.headers.get("Origin")
-    if origin in ALLOWED_FRONTEND_ORIGINS:
+    if _is_allowed_frontend_origin(origin):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
         response.headers["Vary"] = "Origin"
     return response
+
+
+def _is_allowed_frontend_origin(origin: str | None) -> bool:
+    if origin in ALLOWED_FRONTEND_ORIGINS:
+        return True
+    if not origin:
+        return False
+
+    parsed = urlparse(origin)
+    if parsed.scheme != "http" or parsed.port not in ALLOWED_FRONTEND_PORTS:
+        return False
+
+    hostname = parsed.hostname
+    if hostname is None:
+        return False
+    if hostname == "localhost":
+        return True
+
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        return False
+
+    return address.is_loopback or address.is_private
 
 
 def get_workflow() -> BlackOutWorkflow:
@@ -269,6 +296,16 @@ def _window_from_payload(payload):
     )
 
 
-if __name__ == "__main__":
+def run_local_dev_server() -> None:
     import os
-    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+    app.run(
+        debug=True,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000)),
+        use_reloader=False,
+    )
+
+
+if __name__ == "__main__":
+    run_local_dev_server()

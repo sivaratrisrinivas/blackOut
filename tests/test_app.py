@@ -1,8 +1,10 @@
 import json
+import time
 from pathlib import Path
 
 import pytest
 import server as server_module
+from blackout.cognee_adapter import CogneeHttpClient, RealCogneeMemoryAdapter
 from blackout.workflow import BlackOutWorkflow, FakeMemoryAdapter
 from server import app as flask_app
 
@@ -60,6 +62,47 @@ class TestAPIFlow:
         assert data["success"] is True
         decisions = data["recall"]["timeline"]
         assert any("espresso" in d["summary"] for d in decisions)
+
+    def test_load_demo_does_not_wait_for_slow_cognee_uploads(self, monkeypatch):
+        class Response:
+            headers = {"Content-Type": "application/json"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return None
+
+            def read(self):
+                return b'{"ok": true}'
+
+        def urlopen(request, timeout):
+            time.sleep(0.2)
+            return Response()
+
+        def build_adapter(*, load_shell_exports):
+            return RealCogneeMemoryAdapter(
+                cognee_client=CogneeHttpClient(
+                    base_url="https://example.invalid",
+                    api_key="not-shown",
+                    urlopen=urlopen,
+                )
+            )
+
+        monkeypatch.setattr(server_module, "build_memory_adapter_from_env", build_adapter)
+        server_module._workflow = None
+
+        with flask_app.test_client() as c:
+            c.post("/api/reset")
+            started_at = time.perf_counter()
+            resp = c.post("/api/load-demo")
+            elapsed = time.perf_counter() - started_at
+
+        data = resp.get_json()
+        assert elapsed < 0.2
+        assert data["success"] is True
+        assert any("espresso" in d["summary"] for d in data["recall"]["timeline"])
+        server_module._workflow = None
 
     def test_full_flow_feedback_and_forget(self, client):
         resp = client.post("/api/load-demo")
@@ -138,6 +181,49 @@ class TestAPIFlow:
         assert data["success"] is True
         assert "espresso" in data["answer"].lower()
 
+    def test_ask_memory_survives_cognee_search_timeout(self, monkeypatch):
+        class TimeoutAskCogneeClient:
+            def __init__(self):
+                self.data_by_dataset = {}
+
+            def remember(self, data, dataset_name=None, run_in_background=False):
+                self.data_by_dataset.setdefault(dataset_name, []).append(data)
+
+            def recall(self, query_text, query_type=None, datasets=None):
+                if str(query_text).startswith("Ask Your Memory:"):
+                    raise TimeoutError("Cognee recall timed out")
+                selected_datasets = datasets or list(self.data_by_dataset)
+                return "\n".join(
+                    data
+                    for dataset_name in selected_datasets
+                    for data in self.data_by_dataset.get(dataset_name, [])
+                )
+
+            def improve(self, dataset_name=None):
+                return None
+
+            def delete_dataset(self, dataset_name):
+                return None
+
+        def build_adapter(*, load_shell_exports):
+            return RealCogneeMemoryAdapter(cognee_client=TimeoutAskCogneeClient())
+
+        monkeypatch.setattr(server_module, "build_memory_adapter_from_env", build_adapter)
+        server_module._workflow = None
+
+        with flask_app.test_client() as c:
+            c.post("/api/reset")
+            c.post("/api/load-demo")
+            resp = c.post("/api/ask", json={
+                "question": "What did I buy after midnight?"
+            })
+
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["success"] is True
+        assert "espresso" in data["answer"].lower()
+        server_module._workflow = None
+
     def test_prompts_endpoint_returns_suggestions(self, client):
         client.post("/api/load-demo")
         resp = client.get("/api/prompts")
@@ -195,6 +281,39 @@ class TestAPIFlow:
         assert resp.status_code == 200
         assert resp.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
         assert "POST" in resp.headers["Access-Control-Allow-Methods"]
+
+    def test_api_allows_private_next_frontend_network_origin(self, client):
+        resp = client.options(
+            "/api/load-demo",
+            headers={
+                "Origin": "http://10.255.255.254:3000",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Content-Type",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["Access-Control-Allow-Origin"] == "http://10.255.255.254:3000"
+
+    def test_local_dev_server_does_not_restart_on_file_changes(self, monkeypatch):
+        run_kwargs = []
+
+        def run_app(**kwargs):
+            run_kwargs.append(kwargs)
+
+        monkeypatch.setattr(server_module.app, "run", run_app)
+        monkeypatch.setenv("PORT", "5050")
+
+        server_module.run_local_dev_server()
+
+        assert run_kwargs == [
+            {
+                "debug": True,
+                "host": "0.0.0.0",
+                "port": 5050,
+                "use_reloader": False,
+            }
+        ]
 
 
 def test_readme_covers_hackathon_submission_narrative():
