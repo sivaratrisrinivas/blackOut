@@ -22,6 +22,10 @@ class RecordingCogneeClient:
         self.calls.append(("add", data, dataset_name))
         self.data_by_dataset.setdefault(dataset_name, []).append(data)
 
+    def remember(self, data, dataset_name=None):
+        self.calls.append(("remember", data, dataset_name))
+        self.data_by_dataset.setdefault(dataset_name, []).append(data)
+
     def cognify(self, dataset_name=None):
         self.calls.append(("cognify", dataset_name))
 
@@ -45,12 +49,44 @@ class RecordingCogneeClient:
             for data in self.data_by_dataset.get(dataset_name, [])
         )
 
+    def recall(self, query_text, query_type=None, datasets=None):
+        self.calls.append(("recall", query_text, query_type, datasets))
+        return self.search(query_text, query_type=query_type, datasets=datasets)
+
     def improve(self, dataset_name=None):
         self.calls.append(("improve", dataset_name))
 
     def delete_dataset(self, dataset_name):
         self.calls.append(("delete_dataset", dataset_name))
         self.deleted_datasets.add(dataset_name)
+
+
+class SdkShapedCogneeClient:
+    def __init__(self):
+        self.calls = []
+        self.data_by_dataset = {}
+        self.deleted_datasets = set()
+
+    def remember(self, data, dataset_name="main_dataset"):
+        self.calls.append(("remember", data, dataset_name))
+        self.data_by_dataset.setdefault(dataset_name, []).append(data)
+
+    def recall(self, query_text, query_type=None, datasets=None):
+        self.calls.append(("recall", query_text, query_type, datasets))
+        selected_datasets = datasets or list(self.data_by_dataset)
+        return "\n".join(
+            data
+            for dataset_name in selected_datasets
+            if dataset_name not in self.deleted_datasets
+            for data in self.data_by_dataset.get(dataset_name, [])
+        )
+
+    def improve(self, dataset="main_dataset"):
+        self.calls.append(("improve", dataset))
+
+    def forget(self, *, dataset=None, everything=False, memory_only=False):
+        self.calls.append(("forget", dataset, everything, memory_only))
+        self.deleted_datasets.add(dataset)
 
 
 def test_memory_adapter_defaults_to_cognee_and_reports_missing_credentials(monkeypatch):
@@ -173,17 +209,15 @@ def test_cognee_http_client_calls_cloud_endpoints_without_printing_secrets():
         urlopen=urlopen,
     )
 
-    client.add("remember this", dataset_name="blackout_window")
-    client.cognify(dataset_name="blackout_window")
-    client.search("find this", query_type="GRAPH_COMPLETION", datasets=["blackout"])
+    client.remember("remember this", dataset_name="blackout_window")
+    client.recall("find this", query_type="GRAPH_COMPLETION", datasets=["blackout"])
     client.improve(dataset_name="blackout_window")
     client.delete_dataset("blackout_window")
 
     assert [request.full_url for request in requests] == [
-        "https://example.invalid/api/v1/add",
-        "https://example.invalid/api/v1/cognify",
-        "https://example.invalid/api/v1/search",
-        "https://example.invalid/api/v1/memify",
+        "https://example.invalid/api/v1/remember",
+        "https://example.invalid/api/v1/recall",
+        "https://example.invalid/api/v1/improve",
         "https://example.invalid/api/v1/forget",
     ]
     assert all(request.headers["X-api-key"] == "not-shown" for request in requests)
@@ -229,7 +263,7 @@ def test_cognee_http_client_reads_raw_dataset_data_by_name():
     assert client.raw_data("blackout_index") == ["raw BlackOut record"]
 
 
-def test_cognee_http_client_tolerates_missing_memify_endpoint():
+def test_cognee_http_client_calls_supported_improve_endpoint():
     class Response:
         def __init__(self, body=b"{}", status=200):
             self._body = body
@@ -249,7 +283,34 @@ def test_cognee_http_client_tolerates_missing_memify_endpoint():
             return None
 
     def urlopen(request, timeout):
-        if request.full_url == "https://example.invalid/api/v1/memify":
+        if request.full_url == "https://example.invalid/api/v1/improve":
+            return Response()
+        raise AssertionError(request.full_url)
+
+    client = CogneeHttpClient(
+        base_url="https://example.invalid",
+        api_key="not-shown",
+        urlopen=urlopen,
+    )
+
+    assert client.improve(dataset_name="blackout_window") == {}
+
+
+def test_cognee_http_client_tolerates_missing_improve_endpoint():
+    class Response:
+        def __init__(self, body=b"{}", status=200):
+            self._body = body
+            self.status = status
+            self.headers = {"Content-Type": "application/json"}
+
+        def read(self):
+            return self._body
+
+        def close(self):
+            return None
+
+    def urlopen(request, timeout):
+        if request.full_url == "https://example.invalid/api/v1/improve":
             raise HTTPError(
                 request.full_url,
                 404,
@@ -293,8 +354,15 @@ def test_real_cognee_adapter_remembers_evidence_as_a_separable_late_night_window
         primary_demo_evidence="00:12 - ShopSwift receipt: novelty keyboard, $129.",
     )
 
-    assert ("cognify", "blackout_index") in cognee.calls
-    assert ("cognify", "blackout_late_night_window_2026_07_04") in cognee.calls
+    assert any(
+        call[0] == "remember" and call[2] == "blackout_index"
+        for call in cognee.calls
+    )
+    assert any(
+        call[0] == "remember"
+        and call[2] == "blackout_late_night_window_2026_07_04"
+        for call in cognee.calls
+    )
     assert "blackout_index" in cognee.data_by_dataset
     assert "blackout_late_night_window_2026_07_04" in cognee.data_by_dataset
     assert "00:12 - ShopSwift receipt: novelty keyboard, $129." in "\n".join(
@@ -322,7 +390,7 @@ def test_real_cognee_adapter_recalls_morning_after_result_through_cognee_search(
     result = adapter.recall_morning_after()
 
     assert any(
-        call[0] == "search" and call[3] == ["blackout_index"]
+        call[0] == "recall" and call[3] == ["blackout_index"]
         for call in cognee.calls
     )
     assert result.late_night_window == window
@@ -349,7 +417,7 @@ def test_real_cognee_adapter_answers_ask_your_memory_through_cognee_search():
     answer = adapter.ask_memory("What did I buy after midnight?")
 
     assert any(
-        call[0] == "search" and "What did I buy after midnight?" in call[1]
+        call[0] == "recall" and "What did I buy after midnight?" in call[1]
         for call in cognee.calls
     )
     assert answer.answer == "You bought novelty keyboard from ShopSwift at 00:12 for $129."
@@ -421,3 +489,26 @@ def test_real_cognee_adapter_forgets_late_night_window_dataset():
 
     assert ("delete_dataset", "blackout_late_night_window_2026_07_04") in cognee.calls
     assert result.timeline == []
+
+
+def test_real_cognee_adapter_supports_official_sdk_shaped_client():
+    cognee = SdkShapedCogneeClient()
+    adapter = RealCogneeMemoryAdapter(cognee_client=cognee)
+    window = LateNightWindow(
+        label="Pasted late-night window",
+        starts_at="2026-07-04T00:00:00+05:30",
+        ends_at="2026-07-04T05:00:00+05:30",
+        memory_key="late-night-window:2026-07-04",
+    )
+    adapter.remember_late_night_window(
+        window=window,
+        primary_demo_evidence="00:12 - ShopSwift receipt: novelty keyboard, $129.",
+    )
+    decision = adapter.recall_morning_after().timeline[0]
+
+    adapter.improve_decision_memory(decision, "Regret")
+    adapter.forget_late_night_window(window)
+
+    assert ("remember", cognee.data_by_dataset["blackout_index"][0], "blackout_index") in cognee.calls
+    assert ("improve", "blackout_late_night_window_2026_07_04") in cognee.calls
+    assert ("forget", "blackout_late_night_window_2026_07_04", False, False) in cognee.calls

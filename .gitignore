@@ -9,3 +9,4 @@ venv/
 frontend/.next/
 frontend/node_modules/
 frontend/tsconfig.tsbuildinfo
+.env*.local

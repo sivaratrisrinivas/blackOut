@@ -58,19 +58,17 @@ class CogneeHttpClient:
         self._api_key = api_key
         self._urlopen = urlopen
 
-    def add(self, data: str, dataset_name: str | None = None) -> Any:
+    def remember(self, data: str, dataset_name: str | None = None) -> Any:
         fields = {"data": ("blackout-memory.txt", data)}
         if dataset_name is not None:
             fields["datasetName"] = dataset_name
-        return self._request_multipart("POST", "/api/v1/add", fields)
+        fields["run_in_background"] = "false"
+        return self._request_multipart("POST", "/api/v1/remember", fields)
 
-    def cognify(self, dataset_name: str | None = None) -> Any:
-        body: dict[str, Any] = {"runInBackground": False}
-        if dataset_name is not None:
-            body["datasets"] = [dataset_name]
-        return self._request_json("POST", "/api/v1/cognify", body)
+    def add(self, data: str, dataset_name: str | None = None) -> Any:
+        return self.remember(data, dataset_name=dataset_name)
 
-    def search(
+    def recall(
         self,
         query_text: str,
         query_type: Any = None,
@@ -78,12 +76,20 @@ class CogneeHttpClient:
     ) -> Any:
         body: dict[str, Any] = {
             "query": query_text,
-            "search_type": str(query_type or "GRAPH_COMPLETION"),
-            "top_k": 50,
+            "searchType": str(query_type or "GRAPH_COMPLETION"),
+            "topK": 50,
         }
         if datasets is not None:
             body["datasets"] = datasets
-        return self._request_json("POST", "/api/v1/search", body)
+        return self._request_json("POST", "/api/v1/recall", body)
+
+    def search(
+        self,
+        query_text: str,
+        query_type: Any = None,
+        datasets: list[str] | None = None,
+    ) -> Any:
+        return self.recall(query_text, query_type=query_type, datasets=datasets)
 
     def improve(self, dataset_name: str | None = None) -> Any:
         body: dict[str, Any] = {
@@ -97,7 +103,7 @@ class CogneeHttpClient:
         if dataset_name is not None:
             body["datasetName"] = dataset_name
         try:
-            return self._request_json("POST", "/api/v1/memify", body)
+            return self._request_json("POST", "/api/v1/improve", body)
         except CogneeHttpError as error:
             if error.status_code == 404:
                 return None
@@ -249,14 +255,11 @@ class RealCogneeMemoryAdapter:
         self, window: LateNightWindow, primary_demo_evidence: str
     ) -> None:
         dataset_name = self._dataset_name_for(window)
-        _call_cognee_method(
-            self._cognee.add,
+        self._remember_document(
             _cognee_document_for(window, primary_demo_evidence),
             dataset_name=dataset_name,
         )
-        _call_cognee_method(self._cognee.cognify, dataset_name=dataset_name)
-        _call_cognee_method(
-            self._cognee.add,
+        self._remember_document(
             _record_document(
                 {
                     "record_type": "window_index",
@@ -266,7 +269,6 @@ class RealCogneeMemoryAdapter:
             ),
             dataset_name=self._index_dataset_name(),
         )
-        _call_cognee_method(self._cognee.cognify, dataset_name=self._index_dataset_name())
 
     def recall_morning_after(self) -> RecallResult:
         remembered_calls = self._remembered_calls_from_cognee()
@@ -312,11 +314,17 @@ class RealCogneeMemoryAdapter:
         )
 
     def ask_memory(self, question: str) -> AskMemoryResult:
-        self._search(f"Ask Your Memory: {question}")
         question_lower = question.lower()
+        remembered_calls = self._remembered_calls_from_cognee()
+        self._search(
+            f"Ask Your Memory: {question}",
+            dataset_names=[
+                self._dataset_name_for(call.window) for call in remembered_calls
+            ],
+        )
         remembered_decisions = [
             decision
-            for call in self._remembered_calls_from_cognee()
+            for call in remembered_calls
             for decision in self._decisions_with_feedback(
                 call.primary_demo_evidence,
                 call.window,
@@ -354,20 +362,15 @@ class RealCogneeMemoryAdapter:
         self, decision: Decision, feedback_label: FeedbackLabel
     ) -> None:
         improve_call = ImproveMemoryCall(decision=decision, feedback_label=feedback_label)
-        _call_cognee_method(
-            self._cognee.add,
+        self._remember_document(
             _feedback_document_for(improve_call),
             dataset_name=self._dataset_name_for_decision(decision),
         )
-        _call_cognee_method(
-            self._cognee.improve,
-            dataset_name=self._dataset_name_for_decision(decision),
-        )
+        self._improve_dataset(self._dataset_name_for_decision(decision))
 
     def forget_late_night_window(self, window: LateNightWindow) -> None:
         dataset_name = self._dataset_name_for(window)
-        _call_cognee_method(
-            self._cognee.add,
+        self._remember_document(
             _record_document(
                 {
                     "record_type": "forgotten_window",
@@ -377,8 +380,7 @@ class RealCogneeMemoryAdapter:
             ),
             dataset_name=self._index_dataset_name(),
         )
-        _call_cognee_method(self._cognee.cognify, dataset_name=self._index_dataset_name())
-        _call_cognee_method(self._cognee.delete_dataset, dataset_name)
+        self._delete_dataset(dataset_name)
 
     def _dataset_name_for(self, window: LateNightWindow) -> str:
         safe_memory_key = re.sub(r"[^A-Za-z0-9_]+", "_", window.memory_key).strip("_")
@@ -399,11 +401,46 @@ class RealCogneeMemoryAdapter:
         dataset_names: list[str] | None = None,
         search_type: str = "GRAPH_COMPLETION",
     ) -> Any:
+        recall = getattr(self._cognee, "recall", None)
+        if callable(recall):
+            return _call_cognee_method(
+                recall,
+                query_text,
+                query_type=_search_type(search_type),
+                datasets=dataset_names or None,
+            )
+
         return _call_cognee_method(
             self._cognee.search,
             query_text,
             query_type=_search_type(search_type),
             datasets=dataset_names or None,
+        )
+
+    def _remember_document(self, data: str, dataset_name: str) -> Any:
+        remember = getattr(self._cognee, "remember", None)
+        if callable(remember):
+            return _call_cognee_method(remember, data, dataset_name=dataset_name)
+
+        _call_cognee_method(self._cognee.add, data, dataset_name=dataset_name)
+        return _call_cognee_method(self._cognee.cognify, dataset_name=dataset_name)
+
+    def _improve_dataset(self, dataset_name: str) -> Any:
+        return _call_cognee_method_with_dataset(
+            self._cognee.improve,
+            dataset_name,
+            dataset_name_keyword="dataset_name",
+        )
+
+    def _delete_dataset(self, dataset_name: str) -> Any:
+        delete_dataset = getattr(self._cognee, "delete_dataset", None)
+        if callable(delete_dataset):
+            return _call_cognee_method(delete_dataset, dataset_name)
+
+        return _call_cognee_method_with_dataset(
+            self._cognee.forget,
+            dataset_name,
+            dataset_name_keyword="dataset",
         )
 
     def _remembered_calls_from_cognee(self) -> list[RememberCall]:
@@ -692,6 +729,24 @@ def _call_cognee_method(method: Any, *args: Any, **kwargs: Any) -> Any:
         fallback_kwargs = dict(kwargs)
         fallback_kwargs.pop("datasets")
         return _run_cognee_call(method(*args, **fallback_kwargs))
+
+
+def _call_cognee_method_with_dataset(
+    method: Any,
+    dataset_name: str,
+    dataset_name_keyword: str,
+) -> Any:
+    try:
+        parameters = inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+
+    if dataset_name_keyword in parameters:
+        return _call_cognee_method(method, **{dataset_name_keyword: dataset_name})
+    if "dataset" in parameters:
+        return _call_cognee_method(method, dataset=dataset_name)
+
+    return _call_cognee_method(method, **{dataset_name_keyword: dataset_name})
 
 
 def _short_error(message: str) -> str:

@@ -51,7 +51,7 @@ The MVP centers on three submission beats:
 31. As a hackathon judge, I want to see visible use of Cognee's memory lifecycle, so that I can evaluate the project against the Best Use of Cognee criterion.
 32. As a developer, I want the app to call Cognee for remembering evidence, so that ingestion is not a fake demo path.
 33. As a developer, I want the app to call Cognee for recalling decisions and answers, so that retrieval demonstrates persistent memory.
-34. As a developer, I want the app to call Cognee improve or memify after feedback, so that feedback visibly affects the memory story.
+34. As a developer, I want the app to call Cognee improve after feedback, so that feedback visibly affects the memory story.
 35. As a developer, I want the app to call Cognee forget for late-night window deletion, so that privacy is backed by the memory layer.
 36. As a developer, I want Cognee credentials to come from environment variables, so that secrets stay out of the repository.
 37. As a developer, I want a fake Cognee adapter for tests, so that BlackOut behavior can be tested deterministically.

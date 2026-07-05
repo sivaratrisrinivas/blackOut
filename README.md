@@ -104,6 +104,20 @@ Screenshot and image support is a secondary evidence path planned for a future r
 - **Python** for the workflow and evidence extraction.
 - **Cognee** for the real memory adapter behind the same seam as the fake adapter used in tests and demos.
 
+### What Cognee Does In BlackOut
+
+Cognee is BlackOut's persistent memory layer. The Python workflow decides what the app means by Evidence, Late-Night Windows, Decisions, Feedback Labels, Pattern insights, and Forget Scope. Cognee stores and retrieves the remembered records that let those product concepts survive beyond one process run.
+
+In this project, Cognee is used for five concrete memory operations:
+
+1. **Remember**: BlackOut writes each Late-Night Window as structured memory records into a Cognee dataset. The app also writes a small index dataset so it can find remembered windows later.
+2. **Recall**: Morning-After Recall reads remembered window records back from Cognee, reconstructs the latest Decision timeline, and compares it with prior windows.
+3. **Ask**: Ask Your Memory searches the remembered window datasets through Cognee, then BlackOut turns the grounded records into a short answer and Evidence Excerpts.
+4. **Improve**: Feedback Labels are remembered as additional Cognee records attached to a Decision. If the configured Cognee tenant supports the improve endpoint, BlackOut calls it as a best-effort enrichment step.
+5. **Forget**: Forgetting deletes the Cognee dataset for one complete Late-Night Window and marks that window forgotten in the index so future recall does not show it again.
+
+Cognee is not doing the product-specific extraction by itself in this MVP. BlackOut still parses timestamped evidence into Decisions with local Python code. Cognee provides the persistent memory lifecycle that the demo is built around.
+
 ### Environment Variables
 
 Real Cognee memory is the default app memory path. Set these before launching the API server (values are secrets — never commit them):
@@ -175,37 +189,64 @@ The fake memory adapter records every improve-memory call for tests. It also att
 
 The real Cognee adapter maps the visible Memory Lifecycle to Cognee calls:
 
-- Remember Evidence by adding structured BlackOut records to Cognee datasets and running cognify.
-- Recall Morning-After Recall by searching Cognee for the saved BlackOut window index and Late-Night Window records, then returning the structured Recall Result the app displays.
+- Remember Evidence by sending structured BlackOut records through Cognee's supported remember path, which ingests and builds graph memory for each dataset.
+- Recall Morning-After Recall by using Cognee's recall/search path for the saved BlackOut window index and Late-Night Window records, then returning the structured Recall Result the app displays.
 - Answer Ask Your Memory by searching Cognee for saved memory records and grounding answers in Evidence Excerpts.
-- Improve memory from Feedback Labels by adding feedback context and calling Cognee memify/improve.
+- Improve memory from Feedback Labels by adding feedback context and calling Cognee's supported improve path.
 - Forget a Late-Night Window by deleting that window's Cognee dataset.
 
 The Recall Result also exposes the MVP Forget Scope: one complete Late-Night Window. After the user confirms the action, the frontend routes the forget request through `BlackOutWorkflow`, the memory adapter forgets that window as a separable remembered unit, and the next Morning-After Recall excludes its Evidence and Decisions.
 
 The current extraction is intentionally narrow and demo-friendly. It reads timestamped text lines such as receipts, messages, notes, tasks, calendar entries, and commits, then turns them into the MVP Decision shape. The real Cognee adapter uses the same workflow and memory adapter seam.
 
-## Local Development
+## First-Time Setup
 
-Install the app and development dependencies:
+These steps assume Python 3.10+ and Node.js/npm are already installed.
+
+### 1. Clone And Enter The Project
+
+```bash
+git clone <repo-url>
+cd blackOut
+```
+
+If you are already in this repository, start from the project root.
+
+### 2. Install Python Dependencies
+
+Install the app and test dependencies:
 
 ```bash
 python3 -m pip install -e ".[dev]"
 ```
 
-Install the optional Cognee adapter dependency:
+Install the optional Cognee adapter dependency if you want real Cognee memory:
 
 ```bash
 python3 -m pip install -e ".[real-memory]"
 ```
 
-By default, BlackOut uses real Cognee memory. Configure the required environment variables before launching the app:
+### 3. Choose A Memory Mode
+
+By default, BlackOut uses real Cognee memory. Configure the required environment variables before launching the API server:
 
 ```bash
 export COGNEE_BASE_URL=...
 export COGNEE_API_KEY=...
 export LLM_API_KEY=...
 ```
+
+You can also put those exports in a local-only env file:
+
+```bash
+printf 'COGNEE_BASE_URL=...\nCOGNEE_API_KEY=...\nLLM_API_KEY=...\n' > .env.cognee.local
+chmod 600 .env.cognee.local
+set -a
+. ./.env.cognee.local
+set +a
+```
+
+This repository ignores `.env*.local`; never commit real secret values.
 
 Use the fake adapter only when you want deterministic in-memory behavior:
 
@@ -224,23 +265,45 @@ export BLACKOUT_RUN_COGNEE_SMOKE=1
 
 `COGNEE_API_KEY` and `LLM_API_KEY` are read from the environment only. Do not put secret values in tracked files.
 
-Run the API server:
+### 4. Install Frontend Dependencies
+
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+### 5. Start The API Server
+
+From the project root:
 
 ```bash
 python3 server.py
 ```
 
-Run the Next.js frontend:
+The API runs on `http://127.0.0.1:5000`.
+
+### 6. Start The Next.js Frontend
+
+In a second terminal:
 
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:3000` after both servers are running.
+Open `http://127.0.0.1:3000` after both servers are running. The Next.js dev server proxies `/api/*` to `http://127.0.0.1:5000` by default. Set `BLACKOUT_API_BASE_URL` before `npm run dev` to point the frontend at a different API server.
 
-The Next.js dev server proxies `/api/*` to `http://127.0.0.1:5000` by default. Set `BLACKOUT_API_BASE_URL` before `npm run dev` to point the frontend at a different API server.
+### 7. Try The Product Flow
+
+1. Click **Load demo** to seed three Late-Night Windows.
+2. Review the Morning-After Recall timeline.
+3. Open Pattern insights and compare repeated behavior.
+4. Apply a Feedback Label such as Regret, Fine, Funny, or Worth it.
+5. Ask a follow-up question in Ask Your Memory.
+6. Forget the current Late-Night Window to verify the privacy path.
+
+## Validation
 
 Validate the frontend:
 

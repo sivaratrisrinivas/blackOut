@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -30,11 +31,12 @@ def _live_cognee_config_is_missing():
     ),
 )
 def test_live_cognee_memory_lifecycle_smoke():
+    dataset_prefix = f"blackout_smoke_{uuid.uuid4().hex}"
     adapter = build_memory_adapter_from_env(
         env={
             **os.environ,
             "BLACKOUT_MEMORY_ADAPTER": "cognee",
-            "BLACKOUT_COGNEE_DATASET_PREFIX": "blackout_smoke",
+            "BLACKOUT_COGNEE_DATASET_PREFIX": dataset_prefix,
         },
         load_shell_exports=True,
     )
