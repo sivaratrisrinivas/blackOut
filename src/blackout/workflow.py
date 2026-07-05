@@ -113,6 +113,14 @@ class MemoryAdapter(Protocol):
     ) -> None:
         pass
 
+    def improve_decision_memory_for_window(
+        self,
+        window: LateNightWindow,
+        decision: Decision,
+        feedback_label: FeedbackLabel,
+    ) -> None:
+        pass
+
     def forget_late_night_window(self, window: LateNightWindow) -> None:
         pass
 
@@ -252,6 +260,14 @@ class FakeMemoryAdapter:
             decision.evidence_excerpt.text
         ] = feedback_label
 
+    def improve_decision_memory_for_window(
+        self,
+        window: LateNightWindow,
+        decision: Decision,
+        feedback_label: FeedbackLabel,
+    ) -> None:
+        self.improve_decision_memory(decision, feedback_label)
+
     def forget_late_night_window(self, window: LateNightWindow) -> None:
         self.forget_calls.append(window)
         self._forgotten_memory_keys.add(window.memory_key)
@@ -353,10 +369,7 @@ class BlackOutWorkflow:
     def apply_feedback_label(
         self, decision: Decision, feedback_label: FeedbackLabel
     ) -> RecallResult:
-        if feedback_label not in FEEDBACK_LABELS:
-            raise ValueError(
-                "Feedback Label must be one of Regret, Fine, Funny, or Worth it."
-            )
+        self._validate_feedback_label(feedback_label)
 
         self._memory.improve_decision_memory(
             decision=decision,
@@ -364,9 +377,29 @@ class BlackOutWorkflow:
         )
         return self._memory.recall_morning_after()
 
+    def record_feedback_label(
+        self,
+        window: LateNightWindow,
+        decision: Decision,
+        feedback_label: FeedbackLabel,
+    ) -> Decision:
+        self._validate_feedback_label(feedback_label)
+        self._memory.improve_decision_memory_for_window(
+            window=window,
+            decision=decision,
+            feedback_label=feedback_label,
+        )
+        return replace(decision, feedback_label=feedback_label)
+
     def forget_late_night_window(self, window: LateNightWindow) -> RecallResult:
         self._memory.forget_late_night_window(window)
         return self._memory.recall_morning_after()
+
+    def _validate_feedback_label(self, feedback_label: FeedbackLabel) -> None:
+        if feedback_label not in FEEDBACK_LABELS:
+            raise ValueError(
+                "Feedback Label must be one of Regret, Fine, Funny, or Worth it."
+            )
 
 
 def _most_recent_completed_window_date(current_time: datetime) -> date:

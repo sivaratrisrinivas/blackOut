@@ -58,11 +58,16 @@ class CogneeHttpClient:
         self._api_key = api_key
         self._urlopen = urlopen
 
-    def remember(self, data: str, dataset_name: str | None = None) -> Any:
+    def remember(
+        self,
+        data: str,
+        dataset_name: str | None = None,
+        run_in_background: bool = False,
+    ) -> Any:
         fields = {"data": ("blackout-memory.txt", data)}
         if dataset_name is not None:
             fields["datasetName"] = dataset_name
-        fields["run_in_background"] = "false"
+        fields["run_in_background"] = "true" if run_in_background else "false"
         return self._request_multipart("POST", "/api/v1/remember", fields)
 
     def add(self, data: str, dataset_name: str | None = None) -> Any:
@@ -368,6 +373,21 @@ class RealCogneeMemoryAdapter:
         )
         self._improve_dataset(self._dataset_name_for_decision(decision))
 
+    def improve_decision_memory_for_window(
+        self,
+        window: LateNightWindow,
+        decision: Decision,
+        feedback_label: FeedbackLabel,
+    ) -> None:
+        dataset_name = self._dataset_name_for(window)
+        improve_call = ImproveMemoryCall(decision=decision, feedback_label=feedback_label)
+        self._remember_document(
+            _feedback_document_for(improve_call),
+            dataset_name=dataset_name,
+            run_in_background=True,
+        )
+        self._improve_dataset(dataset_name)
+
     def forget_late_night_window(self, window: LateNightWindow) -> None:
         dataset_name = self._dataset_name_for(window)
         self._remember_document(
@@ -417,10 +437,20 @@ class RealCogneeMemoryAdapter:
             datasets=dataset_names or None,
         )
 
-    def _remember_document(self, data: str, dataset_name: str) -> Any:
+    def _remember_document(
+        self,
+        data: str,
+        dataset_name: str,
+        run_in_background: bool = False,
+    ) -> Any:
         remember = getattr(self._cognee, "remember", None)
         if callable(remember):
-            return _call_cognee_method(remember, data, dataset_name=dataset_name)
+            return _call_cognee_method(
+                remember,
+                data,
+                dataset_name=dataset_name,
+                run_in_background=run_in_background,
+            )
 
         _call_cognee_method(self._cognee.add, data, dataset_name=dataset_name)
         return _call_cognee_method(self._cognee.cognify, dataset_name=dataset_name)
@@ -723,11 +753,16 @@ def _call_cognee_method(method: Any, *args: Any, **kwargs: Any) -> Any:
     try:
         return _run_cognee_call(method(*args, **kwargs))
     except TypeError:
-        if "datasets" not in kwargs:
+        fallback_kwargs = dict(kwargs)
+        changed = False
+        for optional_keyword in ("datasets", "run_in_background"):
+            if optional_keyword in fallback_kwargs:
+                fallback_kwargs.pop(optional_keyword)
+                changed = True
+
+        if not changed:
             raise
 
-        fallback_kwargs = dict(kwargs)
-        fallback_kwargs.pop("datasets")
         return _run_cognee_call(method(*args, **fallback_kwargs))
 
 

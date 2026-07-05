@@ -7,11 +7,32 @@ src_path = Path(__file__).resolve().parent / "src"
 if src_path.exists():
     sys.path.insert(0, str(src_path))
 
-from blackout.workflow import BlackOutWorkflow, FEEDBACK_LABELS
+from blackout.workflow import (
+    BlackOutWorkflow,
+    Decision,
+    EvidenceExcerpt,
+    FEEDBACK_LABELS,
+    LateNightWindow,
+)
 from blackout.cognee_adapter import build_memory_adapter_from_env
 
 app = Flask(__name__)
 _workflow: BlackOutWorkflow | None = None
+ALLOWED_FRONTEND_ORIGINS = {
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+}
+
+
+@app.after_request
+def add_local_frontend_cors_headers(response):
+    origin = request.headers.get("Origin")
+    if origin in ALLOWED_FRONTEND_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+        response.headers["Vary"] = "Origin"
+    return response
 
 
 def get_workflow() -> BlackOutWorkflow:
@@ -83,11 +104,26 @@ def api_recall():
 @app.route("/api/feedback", methods=["POST"])
 def api_feedback():
     data = request.get_json() or {}
-    evidence_text = data.get("evidence_text", "")
+    decision_payload = data.get("decision")
+    window_payload = data.get("window")
     label = data.get("label", "")
-    if not evidence_text or label not in FEEDBACK_LABELS:
+    if label not in FEEDBACK_LABELS:
         return jsonify({"success": False, "error": "Invalid feedback"}), 400
     wf = get_workflow()
+
+    if isinstance(decision_payload, dict) and isinstance(window_payload, dict):
+        decision = _decision_from_payload(decision_payload)
+        window = _window_from_payload(window_payload)
+        updated_decision = wf.record_feedback_label(window, decision, label)
+        return jsonify({
+            "success": True,
+            "decision": _serialize_decision(updated_decision),
+        })
+
+    evidence_text = data.get("evidence_text", "")
+    if not evidence_text:
+        return jsonify({"success": False, "error": "Invalid feedback"}), 400
+
     result = wf.morning_after_recall()
     idx = decision_index(result, evidence_text)
     if idx is None:
@@ -194,6 +230,43 @@ def _serialize_recall(result):
         ],
         "raw_evidence": result.raw_evidence,
     }
+
+
+def _serialize_decision(decision):
+    return {
+        "timestamp": decision.timestamp,
+        "summary": decision.summary,
+        "category": decision.category,
+        "source_type": decision.source_type,
+        "people_or_vendors": decision.people_or_vendors,
+        "amount": decision.amount,
+        "regret_signals": decision.regret_signals,
+        "evidence_excerpt": decision.evidence_excerpt.text,
+        "feedback_label": decision.feedback_label,
+    }
+
+
+def _decision_from_payload(payload):
+    return Decision(
+        timestamp=payload["timestamp"],
+        summary=payload["summary"],
+        category=payload["category"],
+        source_type=payload["source_type"],
+        people_or_vendors=list(payload.get("people_or_vendors", [])),
+        amount=payload.get("amount"),
+        regret_signals=list(payload.get("regret_signals", [])),
+        evidence_excerpt=EvidenceExcerpt(text=payload["evidence_excerpt"]),
+        feedback_label=payload.get("feedback_label"),
+    )
+
+
+def _window_from_payload(payload):
+    return LateNightWindow(
+        label=payload["label"],
+        starts_at=payload["starts_at"],
+        ends_at=payload["ends_at"],
+        memory_key=payload["memory_key"],
+    )
 
 
 if __name__ == "__main__":

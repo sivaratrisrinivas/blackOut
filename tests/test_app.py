@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 import server as server_module
-from blackout.workflow import FakeMemoryAdapter
+from blackout.workflow import BlackOutWorkflow, FakeMemoryAdapter
 from server import app as flask_app
 
 
@@ -32,6 +32,11 @@ class TestHTMLPage:
         assert "Reconstruct" in page
         assert "recognize repeat patterns" in page
         assert "repair memory" in page
+
+    def test_frontend_calls_configurable_api_base_url(self):
+        page = (Path(__file__).resolve().parent.parent / "frontend/app/page.tsx").read_text()
+        assert "NEXT_PUBLIC_BLACKOUT_API_BASE_URL" in page
+        assert "http://127.0.0.1:5000" in page
 
     def test_frontend_copy_avoids_out_of_scope_integrations(self):
         page = (Path(__file__).resolve().parent.parent / "frontend/app/page.tsx").read_text().lower()
@@ -78,6 +83,52 @@ class TestAPIFlow:
         assert forget_data["success"] is True
         assert forget_data.get("forgotten") is True
 
+    def test_feedback_can_save_current_decision_without_recalling_first(self):
+        class RecordingMemoryAdapter(FakeMemoryAdapter):
+            def __init__(self):
+                super().__init__()
+                self.recall_count = 0
+
+            def recall_morning_after(self):
+                self.recall_count += 1
+                return super().recall_morning_after()
+
+        memory = RecordingMemoryAdapter()
+        workflow = BlackOutWorkflow(memory=memory)
+        workflow.load_seed_demo_dataset()
+        recall = workflow.morning_after_recall()
+        decision = recall.timeline[0]
+        server_module._workflow = workflow
+
+        with flask_app.test_client() as c:
+            resp = c.post("/api/feedback", json={
+                "window": {
+                    "label": recall.late_night_window.label,
+                    "starts_at": recall.late_night_window.starts_at,
+                    "ends_at": recall.late_night_window.ends_at,
+                    "memory_key": recall.late_night_window.memory_key,
+                },
+                "decision": {
+                    "timestamp": decision.timestamp,
+                    "summary": decision.summary,
+                    "category": decision.category,
+                    "source_type": decision.source_type,
+                    "people_or_vendors": decision.people_or_vendors,
+                    "amount": decision.amount,
+                    "regret_signals": decision.regret_signals,
+                    "evidence_excerpt": decision.evidence_excerpt.text,
+                    "feedback_label": decision.feedback_label,
+                },
+                "label": "Fine",
+            })
+
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["decision"]["feedback_label"] == "Fine"
+        assert memory.recall_count == 1
+        assert [call.feedback_label for call in memory.improve_calls] == ["Fine"]
+        server_module._workflow = None
+
     def test_ask_memory_returns_answer(self, client):
         client.post("/api/load-demo")
         resp = client.post("/api/ask", json={
@@ -120,6 +171,30 @@ class TestAPIFlow:
         assert calls == [True]
         assert isinstance(server_module._workflow._memory, FakeMemoryAdapter)
         server_module._workflow = None
+
+    def test_api_allows_local_next_frontend_origin(self, client):
+        resp = client.post(
+            "/api/load-demo",
+            headers={"Origin": "http://localhost:3000"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
+        assert "Content-Type" in resp.headers["Access-Control-Allow-Headers"]
+
+    def test_api_allows_local_next_frontend_preflight(self, client):
+        resp = client.options(
+            "/api/load-demo",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Content-Type",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
+        assert "POST" in resp.headers["Access-Control-Allow-Methods"]
 
 
 def test_readme_covers_hackathon_submission_narrative():

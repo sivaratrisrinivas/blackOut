@@ -80,14 +80,26 @@ const stepLabels: Record<Step, string> = {
 
 const steps: Step[] = ["welcome", "evidence", "recall", "feedback", "insights", "ask", "finish"];
 const feedbackLabels = ["Regret", "Fine", "Funny", "Worth it"];
+const apiBaseUrl = process.env.NEXT_PUBLIC_BLACKOUT_API_BASE_URL || "http://127.0.0.1:5000";
+
+function apiUrl(path: string) {
+  if (/^https?:\/\//.test(path)) {
+    return path;
+  }
+  return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 async function postApi<T>(path: string, body?: unknown): Promise<ApiResult<T>> {
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
-  return response.json();
+  const result = await response.json();
+  if (!response.ok && result && typeof result === "object") {
+    return { success: false, ...result };
+  }
+  return result;
 }
 
 function categoryTone(category: string) {
@@ -181,17 +193,51 @@ export default function Home() {
   }
 
   async function applyFeedback(label: string) {
-    if (!currentDecision) return;
-    const result = await runAction<{ recall: Recall }>(
-      `Marking as ${label}...`,
-      () =>
-        postApi("/api/feedback", {
-          evidence_text: currentDecision.evidence_excerpt,
-          label
-        })
-    );
-    if (!result) return;
-    setRecall(result.recall);
+    if (!currentDecision || !recall) return;
+    const decision = currentDecision;
+    const window = recall.window;
+    updateDecisionFeedback(decision.evidence_excerpt, decision.summary, label);
+    setStatus(`Saving ${label} feedback...`);
+    try {
+      const result = await postApi<{ decision: Decision }>("/api/feedback", {
+        window,
+        decision,
+        label
+      });
+      if (!result.success) {
+        setStatus(result.error || "Feedback was not saved.");
+        return;
+      }
+      setStatus("");
+    } catch {
+      setStatus("Feedback is shown locally, but the API save did not finish.");
+    }
+  }
+
+  function updateDecisionFeedback(evidenceExcerpt: string, summary: string, label: string) {
+    setRecall((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        timeline: current.timeline.map((decision) =>
+          decision.evidence_excerpt === evidenceExcerpt
+            ? { ...decision, feedback_label: label }
+            : decision
+        ),
+        pattern_insights: current.pattern_insights.map((insight) => ({
+          ...insight,
+          status:
+            insight.current_decision_excerpt === evidenceExcerpt && label === "Regret"
+              ? "confirmed regret"
+              : insight.status,
+          related_prior_decisions: insight.related_prior_decisions.map((decision) =>
+            decision.summary === summary
+              ? { ...decision, feedback_label: label }
+              : decision
+          )
+        }))
+      };
+    });
   }
 
   function nextFeedback() {

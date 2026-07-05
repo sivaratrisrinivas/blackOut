@@ -292,7 +292,13 @@ cd frontend
 npm run dev
 ```
 
-Open `http://127.0.0.1:3000` after both servers are running. The Next.js dev server proxies `/api/*` to `http://127.0.0.1:5000` by default. Set `BLACKOUT_API_BASE_URL` before `npm run dev` to point the frontend at a different API server.
+Open `http://127.0.0.1:3000` after both servers are running.
+
+The browser client calls the Flask API directly at `http://127.0.0.1:5000` by default. If your API server is somewhere else, set the public frontend API base before starting Next.js:
+
+```bash
+NEXT_PUBLIC_BLACKOUT_API_BASE_URL=http://127.0.0.1:5000 npm run dev
+```
 
 ### 7. Try The Product Flow
 
