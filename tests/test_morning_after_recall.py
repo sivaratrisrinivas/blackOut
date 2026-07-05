@@ -129,6 +129,110 @@ def test_morning_after_recall_reconstructs_pasted_evidence_as_a_decision_timelin
     )
 
 
+def test_morning_after_recall_normalizes_messy_receipts_messages_and_calendar_text():
+    workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
+
+    workflow.remember_evidence(
+        primary_evidence="""Late-Night Window: Messy paste
+Order placed: 2:13 AM
+Merchant: MoonCart
+Item: weighted blanket
+Total: $148.00
+
+Priya, 1:05 AM
+I can totally redesign the slides by breakfast.
+
+Starts 4:00 AM
+Title: Review launch deck
+""",
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30"),
+    )
+
+    result = workflow.morning_after_recall()
+
+    assert [decision.timestamp for decision in result.timeline] == [
+        "02:13",
+        "01:05",
+        "04:00",
+    ]
+    assert [decision.category for decision in result.timeline] == [
+        "purchase",
+        "message",
+        "plan",
+    ]
+
+    purchase = result.timeline[0]
+    assert purchase.summary == "Bought weighted blanket from MoonCart"
+    assert purchase.source_type == "receipt"
+    assert purchase.people_or_vendors == ["MoonCart"]
+    assert purchase.amount == "$148.00"
+    assert purchase.evidence_excerpt.text == (
+        "02:13 - MoonCart receipt: weighted blanket, $148.00."
+    )
+
+    message = result.timeline[1]
+    assert message.summary == "Texted Priya: I can totally redesign the slides by breakfast."
+    assert message.evidence_excerpt.text == (
+        "01:05 - Text to Priya: I can totally redesign the slides by breakfast."
+    )
+
+    plan = result.timeline[2]
+    assert plan.summary == "Made plan: Review launch deck"
+    assert plan.evidence_excerpt.text == "04:00 - Calendar: Review launch deck"
+
+
+def test_morning_after_recall_handles_evidence_without_recognizable_times_gracefully():
+    workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
+
+    workflow.remember_evidence(
+        primary_evidence="""Late-Night Window: Untimed paste
+Some copied notes without a timestamp.
+Another line from a receipt export.
+""",
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30"),
+    )
+
+    result = workflow.morning_after_recall()
+
+    assert result.timeline == []
+    assert result.raw_evidence == []
+
+
+class StubBookishContext:
+    def supplement_for(self, source, body):
+        assert source == "Book note"
+        assert "Dune" in body
+        return "Open Library: Dune by Frank Herbert, first published 1965"
+
+
+def test_morning_after_recall_enriches_bookish_evidence_when_context_is_available():
+    memory = FakeMemoryAdapter(bookish_context=StubBookishContext())
+    workflow = BlackOutWorkflow(memory=memory)
+
+    workflow.remember_evidence(
+        primary_evidence="""Late-Night Window: Bookish paste
+2:44am
+Book note: I bought Dune for tomorrow me.
+""",
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30"),
+    )
+
+    result = workflow.morning_after_recall()
+
+    assert len(result.timeline) == 1
+    decision = result.timeline[0]
+    assert decision.timestamp == "02:44"
+    assert decision.category == "note"
+    assert decision.source_type == "book"
+    assert decision.summary == (
+        "Saved book note: I bought Dune for tomorrow me. "
+        "(Open Library: Dune by Frank Herbert, first published 1965)"
+    )
+    assert decision.evidence_excerpt.text == (
+        "02:44 - Book note: I bought Dune for tomorrow me."
+    )
+
+
 def test_morning_after_recall_uses_the_memory_lifecycle_seam():
     memory = RecordingMemoryAdapter()
     workflow = BlackOutWorkflow(memory=memory)

@@ -18,12 +18,14 @@ from typing import Any
 
 from blackout.workflow import (
     AskMemoryResult,
+    BookishContextProvider,
     Decision,
     FeedbackLabel,
     FakeMemoryAdapter,
     ImproveMemoryCall,
     LateNightWindow,
     MemoryAdapter,
+    NullBookishContextProvider,
     RecallResult,
     RememberCall,
     _ask_memory_result_for,
@@ -31,6 +33,7 @@ from blackout.workflow import (
     _evidence_lines,
     _pattern_insights_for,
 )
+from blackout.bookish_enrichment import build_bookish_context_from_env
 
 
 COGNEE_REQUIRED_ENV_VARS = ("COGNEE_BASE_URL", "COGNEE_API_KEY", "LLM_API_KEY")
@@ -260,9 +263,11 @@ class RealCogneeMemoryAdapter:
         self,
         cognee_client: Any,
         dataset_prefix: str = "blackout",
+        bookish_context: BookishContextProvider | None = None,
     ) -> None:
         self._cognee = cognee_client
         self._dataset_prefix = dataset_prefix
+        self._bookish_context = bookish_context or NullBookishContextProvider()
         self._remembered_by_memory_key: dict[str, RememberCall] = {}
         self._feedback_by_memory_key: dict[str, dict[str, FeedbackLabel]] = {}
         self._forgotten_memory_keys: set[str] = set()
@@ -439,13 +444,13 @@ class RealCogneeMemoryAdapter:
 
     def _dataset_name_for_decision(self, decision: Decision) -> str:
         for call in self._remembered_calls():
-            if decision.evidence_excerpt.text in call.primary_demo_evidence:
+            if _decision_belongs_to_call(decision, call):
                 return self._dataset_name_for(call.window)
         return f"{self._dataset_prefix}_feedback"
 
     def _window_for_decision(self, decision: Decision) -> LateNightWindow | None:
         for call in self._remembered_calls():
-            if decision.evidence_excerpt.text in call.primary_demo_evidence:
+            if _decision_belongs_to_call(decision, call):
                 return call.window
         return None
 
@@ -617,7 +622,10 @@ class RealCogneeMemoryAdapter:
         feedback_by_evidence_excerpt = self._feedback_by_evidence_excerpt(window)
         return [
             self._with_feedback(decision, feedback_by_evidence_excerpt)
-            for decision in _decisions_from_evidence(primary_demo_evidence)
+            for decision in _decisions_from_evidence(
+                primary_demo_evidence,
+                bookish_context=self._bookish_context,
+            )
         ]
 
     def _with_feedback(
@@ -658,13 +666,18 @@ def build_memory_adapter_from_env(
         configured_env = _with_shell_exports(
             configured_env,
             Path.home() / ".bashrc",
-            ("BLACKOUT_MEMORY_ADAPTER", "BLACKOUT_COGNEE_DATASET_PREFIX")
+            (
+                "BLACKOUT_MEMORY_ADAPTER",
+                "BLACKOUT_COGNEE_DATASET_PREFIX",
+                "BLACKOUT_BOOKISH_CONTEXT",
+            )
             + COGNEE_REQUIRED_ENV_VARS,
         )
     adapter_name = configured_env.get("BLACKOUT_MEMORY_ADAPTER", "cognee").lower()
+    bookish_context = build_bookish_context_from_env(configured_env)
 
     if adapter_name in {"", "fake"}:
-        return FakeMemoryAdapter()
+        return FakeMemoryAdapter(bookish_context=bookish_context)
 
     if adapter_name != "cognee":
         raise CogneeConfigurationError(
@@ -685,6 +698,7 @@ def build_memory_adapter_from_env(
     return RealCogneeMemoryAdapter(
         cognee_client=cognee_client or _build_cognee_client(configured_env),
         dataset_prefix=configured_env.get("BLACKOUT_COGNEE_DATASET_PREFIX", "blackout"),
+        bookish_context=bookish_context,
     )
 
 
@@ -725,6 +739,10 @@ def _window_from_payload(payload: Mapping[str, str]) -> LateNightWindow:
         ends_at=payload["ends_at"],
         memory_key=payload["memory_key"],
     )
+
+
+def _decision_belongs_to_call(decision: Decision, call: RememberCall) -> bool:
+    return decision.evidence_excerpt.text in _evidence_lines(call.primary_demo_evidence)
 
 
 def _record_document(record: Mapping[str, Any]) -> str:

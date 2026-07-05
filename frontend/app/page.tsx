@@ -475,13 +475,13 @@ function EvidenceScreen({
       <ScreenHeader
         icon={<NotebookText size={20} />}
         title="Add Evidence"
-        description="Paste receipts, messages, notes, commits, or other traces from the previous Late-Night Window."
+        description="Paste copied receipts, chats, notes, calendar text, commits, book notes, or OCR text from the previous Late-Night Window."
       />
       <textarea
         className="evidence-input"
         value={evidence}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={"Late-Night Window: Last night\n00:12 - ShopSwift receipt: novelty keyboard, $129.\n01:05 - Text to Priya: \"I can totally redesign the slides by breakfast.\""}
+        placeholder={"Late-Night Window: Last night\nOrder placed: 2:13 AM\nMerchant: ShopSwift\nItem: novelty keyboard\nTotal: $129\n\nPriya, 1:05 AM\nI can totally redesign the slides by breakfast.\n\nStarts 4:00 AM\nTitle: Review launch deck"}
       />
       <div className="button-row">
         <button className="secondary-button" onClick={onBack}>

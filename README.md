@@ -44,6 +44,8 @@ Today, the app can:
 - Forget an entire Late-Night Window after confirmation, removing that window from future recall.
 - Keep forgotten Late-Night Windows out of both Morning-After Recall and Ask Your Memory answers.
 - Keep raw Evidence behind a collapsible provenance section instead of making it the main result.
+- Normalize messy pasted Evidence such as copied receipts, chat snippets, calendar text, tasks, commits, notes, and OCR text before extracting Decisions.
+- Optionally enrich bookish Evidence with no-key public Books APIs for small context about books or poems.
 - Run deterministically with a fake memory adapter when explicitly configured for tests and local demos.
 - Use the real Cognee memory adapter when environment variables are configured.
 
@@ -134,6 +136,7 @@ Optional:
 | Variable | Purpose |
 |---|---|
 | `BLACKOUT_COGNEE_DATASET_PREFIX` | Prefix for Cognee dataset names |
+| `BLACKOUT_BOOKISH_CONTEXT` | Optional. Set to `public-apis` to enrich book and poetry notes through Open Library and PoetryDB |
 | `BLACKOUT_RUN_COGNEE_SMOKE` | Set to `1` to run the live Cognee smoke test |
 
 ## How It Works
@@ -161,6 +164,17 @@ Morning-After Recall reconstructs remembered Evidence into a deterministic Decis
 - MVP Decision Categories: purchase, message, note, commit, plan, subscription, or other.
 - People or vendors, amounts, neutral regret signals, and Evidence Excerpts when available.
 - Raw Evidence shown only behind the collapsible provenance section.
+
+Before extraction, BlackOut normalizes pasted Evidence into timestamped Evidence Excerpts. Existing demo-style lines such as `03:12 - BeanForge receipt: espresso machine, $249.` still work unchanged, but the parser also accepts messy copied text with recognizable times:
+
+- Receipt blocks such as `Order placed: 2:13 AM`, `Merchant: MoonCart`, `Item: weighted blanket`, and `Total: $148.00`.
+- Chat exports such as `Priya, 1:05 AM` followed by message text.
+- Calendar or task exports such as `Starts 4:00 AM` and `Title: Review launch deck`.
+- Notes, commits, book notes, poetry notes, and OCR text that include a time somewhere in the pasted chunk.
+
+If no recognizable time appears in the pasted Evidence, recall returns an empty Decision timeline for that window instead of crashing or inventing a timestamp.
+
+Bookish Evidence can optionally add a little fun depth. Set `BLACKOUT_BOOKISH_CONTEXT=public-apis` and BlackOut will use no-key APIs from the Public APIs Books list: Open Library for book notes and PoetryDB for poetry notes. The enrichment is best-effort and short-timeout; if an API is unavailable, BlackOut still reconstructs the Decision without the extra context.
 
 After the timeline, Morning-After Recall compares current Decisions with prior remembered Decisions. When it finds a similar category with the same person or vendor, it returns a Pattern insight with:
 
@@ -201,7 +215,7 @@ The real Cognee adapter maps the visible Memory Lifecycle to Cognee calls:
 
 The Recall Result also exposes the MVP Forget Scope: one complete Late-Night Window. After the user confirms the action, the frontend routes the forget request through `BlackOutWorkflow`, the memory adapter forgets that window as a separable remembered unit, and the next Morning-After Recall excludes its Evidence and Decisions.
 
-The current extraction is intentionally narrow and demo-friendly. It reads timestamped text lines such as receipts, messages, notes, tasks, calendar entries, and commits, then turns them into the MVP Decision shape. The real Cognee adapter uses the same workflow and memory adapter seam.
+Extraction remains deterministic and local-first. It normalizes common real paste formats into timestamped Evidence Excerpts, then turns those excerpts into the MVP Decision shape. Optional book and poetry enrichment uses public no-key Books APIs only after a Decision-like excerpt has been found.
 
 ## First-Time Setup
 

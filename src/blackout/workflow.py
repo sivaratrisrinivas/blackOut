@@ -27,6 +27,10 @@ ASK_YOUR_MEMORY_PROMPTS = (
 )
 _EVIDENCE_LINE = re.compile(r"^(?P<timestamp>\d{2}:\d{2}) - (?P<source>[^:]+): (?P<body>.+)$")
 _AMOUNT = re.compile(r"\$\d+(?:\.\d{2})?")
+_TIME = re.compile(
+    r"(?<!\d)(?P<hour>\d{1,2}):(?P<minute>\d{2})\s*"
+    r"(?P<period>[AaPp]\.?\s?[Mm]\.?)?(?!\d)"
+)
 
 
 @dataclass(frozen=True)
@@ -125,14 +129,25 @@ class MemoryAdapter(Protocol):
         pass
 
 
+class BookishContextProvider(Protocol):
+    def supplement_for(self, source: str, body: str) -> str | None:
+        pass
+
+
+class NullBookishContextProvider:
+    def supplement_for(self, source: str, body: str) -> str | None:
+        return None
+
+
 class FakeMemoryAdapter:
-    def __init__(self) -> None:
+    def __init__(self, bookish_context: BookishContextProvider | None = None) -> None:
         self.remember_calls: list[RememberCall] = []
         self.improve_calls: list[ImproveMemoryCall] = []
         self.forget_calls: list[LateNightWindow] = []
         self.ask_memory_calls: list[str] = []
         self._feedback_by_evidence_excerpt: dict[str, FeedbackLabel] = {}
         self._forgotten_memory_keys: set[str] = set()
+        self._bookish_context = bookish_context or NullBookishContextProvider()
 
     def remember_late_night_window(
         self, window: LateNightWindow, primary_demo_evidence: str
@@ -201,7 +216,9 @@ class FakeMemoryAdapter:
         )
         raw_evidence = _evidence_lines(remembered_window.primary_demo_evidence)
         timeline = [
-            self._with_feedback(_decision_from_evidence_line(line))
+            self._with_feedback(
+                _decision_from_evidence_line(line, self._bookish_context)
+            )
             for line in raw_evidence
         ]
         prior_decisions = [
@@ -275,7 +292,10 @@ class FakeMemoryAdapter:
     def _decisions_with_feedback(self, primary_demo_evidence: str) -> list[Decision]:
         return [
             self._with_feedback(decision)
-            for decision in _decisions_from_evidence(primary_demo_evidence)
+            for decision in _decisions_from_evidence(
+                primary_demo_evidence,
+                bookish_context=self._bookish_context,
+            )
         ]
 
     def _remembered_decisions(self) -> list[Decision]:
@@ -446,16 +466,46 @@ def _evidence_label(primary_evidence: str) -> str:
 
 
 def _evidence_lines(primary_demo_evidence: str) -> list[str]:
-    return [
-        line.strip()
-        for line in primary_demo_evidence.splitlines()
-        if _EVIDENCE_LINE.match(line.strip())
-    ]
+    lines = [line.strip() for line in primary_demo_evidence.splitlines()]
+    normalized: list[str] = []
+    pending_chunk: list[str] = []
+
+    def flush_pending_chunk() -> None:
+        if not pending_chunk:
+            return
+        normalized_line = _normalized_evidence_line_for(pending_chunk)
+        if normalized_line:
+            normalized.append(normalized_line)
+        pending_chunk.clear()
+
+    for line in lines:
+        if not line or line.startswith("Late-Night Window:"):
+            flush_pending_chunk()
+            continue
+
+        if _EVIDENCE_LINE.match(line):
+            flush_pending_chunk()
+            normalized.append(line)
+            continue
+
+        if _TIME.search(line):
+            flush_pending_chunk()
+            pending_chunk.append(line)
+            continue
+
+        if pending_chunk:
+            pending_chunk.append(line)
+
+    flush_pending_chunk()
+    return normalized
 
 
-def _decisions_from_evidence(primary_demo_evidence: str) -> list[Decision]:
+def _decisions_from_evidence(
+    primary_demo_evidence: str,
+    bookish_context: BookishContextProvider | None = None,
+) -> list[Decision]:
     return [
-        _decision_from_evidence_line(line)
+        _decision_from_evidence_line(line, bookish_context)
         for line in _evidence_lines(primary_demo_evidence)
     ]
 
@@ -556,7 +606,10 @@ def _ask_memory_sentence_for(decision: Decision) -> str:
     return f"{sentence}."
 
 
-def _decision_from_evidence_line(line: str) -> Decision:
+def _decision_from_evidence_line(
+    line: str,
+    bookish_context: BookishContextProvider | None = None,
+) -> Decision:
     match = _EVIDENCE_LINE.match(line)
     if not match:
         return Decision(
@@ -574,10 +627,17 @@ def _decision_from_evidence_line(line: str) -> Decision:
     source = match.group("source")
     body = match.group("body")
     category = _category_for(source, body)
+    summary = _summary_for(category, source, body)
+    supplement = (bookish_context or NullBookishContextProvider()).supplement_for(
+        source,
+        body,
+    )
+    if supplement:
+        summary = f"{summary} ({supplement})"
 
     return Decision(
         timestamp=timestamp,
-        summary=_summary_for(category, source, body),
+        summary=summary,
         category=category,
         source_type=_source_type_for(source),
         people_or_vendors=_people_or_vendors_for(source, body),
@@ -595,6 +655,8 @@ def _category_for(source: str, body: str) -> DecisionCategory:
         return "purchase"
     if source_lower.startswith("text"):
         return "message"
+    if "book" in source_lower or "poetry" in source_lower or "poem" in source_lower:
+        return "note"
     if "cancel" in body_lower and "subscription" in body_lower:
         return "subscription"
     if "calendar" in source_lower:
@@ -612,6 +674,10 @@ def _source_type_for(source: str) -> str:
         return "receipt"
     if source_lower.startswith("text"):
         return "message"
+    if "poetry" in source_lower or "poem" in source_lower:
+        return "poetry"
+    if "book" in source_lower:
+        return "book"
     if "todoist" in source_lower:
         return "task"
     if "notes" in source_lower or "note" in source_lower:
@@ -656,6 +722,10 @@ def _summary_for(category: DecisionCategory, source: str, body: str) -> str:
     if category == "subscription":
         return f"Flagged subscription follow-up: {clean_body}"
     if category == "note":
+        if "book" in source.lower():
+            return f"Saved book note: {clean_body}"
+        if "poetry" in source.lower() or "poem" in source.lower():
+            return f"Saved poetry note: {clean_body}"
         return f"Wrote note: {clean_body}"
     if category == "plan":
         return f"Made plan: {clean_body}"
@@ -680,3 +750,175 @@ def _regret_signals_for(category: DecisionCategory, body: str) -> list[str]:
         signals.append("subscription needs follow-up")
 
     return signals
+
+
+def _normalized_evidence_line_for(chunk: list[str]) -> str | None:
+    timestamp = _normalized_timestamp_for("\n".join(chunk))
+    if timestamp is None:
+        return None
+
+    source, body = _source_and_body_for(chunk)
+    body = _clean_body(body)
+    if not body:
+        return None
+    return f"{timestamp} - {source}: {body}"
+
+
+def _normalized_timestamp_for(text: str) -> str | None:
+    match = _TIME.search(text)
+    if not match:
+        return None
+
+    hour = int(match.group("hour"))
+    minute = int(match.group("minute"))
+    period = match.group("period")
+    if period:
+        normalized_period = period.lower().replace(".", "").replace(" ", "")
+        if normalized_period == "am" and hour == 12:
+            hour = 0
+        elif normalized_period == "pm" and hour != 12:
+            hour += 12
+
+    if hour > 23 or minute > 59:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _source_and_body_for(chunk: list[str]) -> tuple[str, str]:
+    text = "\n".join(chunk)
+    lower_text = text.lower()
+    first_line = chunk[0]
+    remainder = _remove_first_time(first_line).strip(" -,:")
+    non_time_lines = [_remove_first_time(line).strip(" -,:") for line in chunk]
+    non_time_lines = [line for line in non_time_lines if line]
+
+    chat_name = _chat_name_for(first_line)
+    if chat_name:
+        return f"Text to {chat_name}", _best_chat_body(non_time_lines, chat_name)
+
+    if _looks_like_receipt(lower_text):
+        vendor = _field_value(chunk, ("merchant", "vendor", "store", "seller"))
+        vendor = vendor or _receipt_vendor_from_lines(chunk) or "Unknown vendor"
+        item = _field_value(chunk, ("item", "product", "title", "book"))
+        item = item or _first_meaningful_line(non_time_lines, {
+            "order",
+            "placed",
+            "merchant",
+            "vendor",
+            "store",
+            "seller",
+            "total",
+            "amount",
+            "receipt",
+        })
+        amount = _amount_for(text)
+        body = item or "purchase"
+        if amount:
+            body = f"{body}, {amount}"
+        return f"{vendor} receipt", _sentence(body)
+
+    if _looks_bookish(lower_text):
+        source = "Poetry note" if "poem" in lower_text or "poetry" in lower_text else "Book note"
+        body = _field_value(chunk, ("book note", "poem", "poetry", "book", "title"))
+        body = body or _first_meaningful_line(non_time_lines, {"book note", "note"})
+        return source, body or remainder or text
+
+    if "calendar" in lower_text or "starts" in lower_text or "meeting" in lower_text:
+        body = _field_value(chunk, ("title", "event", "meeting"))
+        body = body or _first_meaningful_line(non_time_lines, {"starts", "calendar"})
+        return "Calendar", body or remainder or text
+
+    if "commit" in lower_text or "branch" in lower_text or "github" in lower_text:
+        body = _field_value(chunk, ("commit", "message"))
+        body = body or _first_meaningful_line(non_time_lines, {"commit", "github"})
+        return "Git commit", body or remainder or text
+
+    if "todo" in lower_text or "task" in lower_text or "cancel" in lower_text:
+        body = _field_value(chunk, ("todo", "task", "title"))
+        body = body or _first_meaningful_line(non_time_lines, {"todo", "task"})
+        return "Todoist", body or remainder or text
+
+    if "note" in lower_text:
+        body = _field_value(chunk, ("note", "title"))
+        body = body or _first_meaningful_line(non_time_lines, {"note"})
+        return "Notes app", body or remainder or text
+
+    return "Evidence", remainder or " ".join(non_time_lines)
+
+
+def _remove_first_time(text: str) -> str:
+    return _TIME.sub("", text, count=1)
+
+
+def _chat_name_for(line: str) -> str | None:
+    match = re.match(
+        r"^(?P<name>[A-Z][A-Za-z .'-]{1,40}),?\s+"
+        r"\d{1,2}:\d{2}\s*(?:[AaPp]\.?\s?[Mm]\.?)?",
+        line,
+    )
+    if not match:
+        return None
+    name = match.group("name").strip()
+    if name.lower() in {"starts", "ends", "order placed", "placed", "title"}:
+        return None
+    return name
+
+
+def _best_chat_body(lines: list[str], chat_name: str) -> str:
+    useful_lines = [line for line in lines if line != chat_name]
+    return " ".join(useful_lines).strip()
+
+
+def _looks_like_receipt(text: str) -> bool:
+    return any(word in text for word in ["receipt", "order", "merchant", "vendor", "store", "total"]) or bool(_AMOUNT.search(text))
+
+
+def _looks_bookish(text: str) -> bool:
+    return any(word in text for word in ["book", "read", "reading", "poem", "poetry", "novel"])
+
+
+def _field_value(lines: list[str], labels: tuple[str, ...]) -> str | None:
+    for line in lines:
+        for label in labels:
+            match = re.match(
+                rf"^{re.escape(label)}\s*[:=-]\s*(?P<value>.+)$",
+                _remove_first_time(line).strip(),
+                flags=re.IGNORECASE,
+            )
+            if match:
+                return match.group("value").strip()
+    return None
+
+
+def _receipt_vendor_from_lines(lines: list[str]) -> str | None:
+    for line in lines:
+        cleaned = _remove_first_time(line).strip(" -,:")
+        if not cleaned or ":" in cleaned:
+            continue
+        if "receipt" in cleaned.lower():
+            return cleaned.lower().replace("receipt", "").strip().title()
+    return None
+
+
+def _first_meaningful_line(lines: list[str], ignored_words: set[str]) -> str | None:
+    for line in lines:
+        lower_line = line.lower()
+        if any(lower_line.startswith(word) for word in ignored_words):
+            continue
+        if _AMOUNT.fullmatch(line):
+            continue
+        return line
+    return None
+
+
+def _clean_body(body: str) -> str:
+    return " ".join(body.split()).strip()
+
+
+def _sentence(body: str) -> str:
+    body = body.strip()
+    if not body:
+        return body
+    if body[-1] in ".!?":
+        return body
+    return f"{body}."
