@@ -6,4 +6,6 @@ venv/
 *.egg-info/
 .agents/
 .codex/
-
+frontend/.next/
+frontend/node_modules/
+frontend/tsconfig.tsbuildinfo

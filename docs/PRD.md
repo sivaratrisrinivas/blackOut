@@ -8,7 +8,7 @@ BlackOut addresses the specific pain of late-night digital amnesia: the user wan
 
 ## Solution
 
-BlackOut is a focused Streamlit app that turns messy late-night evidence into remembered decisions using Cognee. The user can load a deterministic seed demo dataset or paste their own evidence, run Morning-After Recall for the most recent late-night window, inspect a Recall Result, apply Feedback Labels, query remembered context through Ask Your Memory, and forget an entire late-night window.
+BlackOut is a focused Next.js and Python app that turns messy late-night evidence into remembered decisions using Cognee. The user can load a deterministic seed demo dataset or paste their own evidence, run Morning-After Recall for the most recent late-night window, inspect a Recall Result, apply Feedback Labels, query remembered context through Ask Your Memory, and forget an entire late-night window.
 
 The MVP centers on three submission beats:
 
@@ -56,7 +56,7 @@ The MVP centers on three submission beats:
 36. As a developer, I want Cognee credentials to come from environment variables, so that secrets stay out of the repository.
 37. As a developer, I want a fake Cognee adapter for tests, so that BlackOut behavior can be tested deterministically.
 38. As a developer, I want an optional real Cognee smoke path, so that configured environments can verify the live integration.
-39. As a developer, I want the Streamlit UI to depend on a product workflow seam, so that UI code does not own domain behavior.
+39. As a developer, I want the Next.js UI to depend on a product workflow seam, so that UI code does not own domain behavior.
 40. As a maintainer, I want the README to explain Reconstruct, Recognize, Repair, so that the submission narrative is clear.
 41. As a maintainer, I want out-of-scope integrations clearly excluded, so that the MVP does not drift into phone, email, or shopping platform OAuth.
 42. As a user, I want BlackOut to avoid psychological diagnosis, so that the product remains tasteful and focused on decisions.
@@ -66,9 +66,9 @@ The MVP centers on three submission beats:
 
 ## Implementation Decisions
 
-- BlackOut will use Streamlit, Python, and Cognee for the MVP, as recorded in the accepted architecture decision.
+- BlackOut will use a Next.js frontend, a Python workflow/API layer, and Cognee for memory, as recorded in the current architecture decisions.
 - The primary implementation seam will be a product workflow service named conceptually as `BlackOutWorkflow`.
-- Streamlit will call the workflow service for all product actions instead of directly owning Cognee calls or decision extraction behavior.
+- The frontend will call the workflow service through API endpoints for all product actions instead of directly owning Cognee calls or decision extraction behavior.
 - The workflow service will expose actions for loading the Seed Demo Dataset, remembering evidence, running Morning-After Recall, asking memory, applying feedback, improving memory, and forgetting a late-night window.
 - Cognee access will sit behind an adapter interface so tests can use a deterministic fake adapter while the app uses the real Cognee Python SDK.
 - The real adapter will use configured environment variables for Cognee and LLM credentials. Secrets may exist in the user's shell configuration, but the application must only read environment variables and must not copy secret values into tracked files.
@@ -88,7 +88,7 @@ The MVP centers on three submission beats:
 
 ## Testing Decisions
 
-- Good tests should verify externally visible BlackOut behavior and avoid testing Cognee internals, Streamlit widget internals, or private helper implementation details.
+- Good tests should verify externally visible BlackOut behavior and avoid testing Cognee internals, frontend framework internals, or private helper implementation details.
 - The highest-value test seam is the workflow service. Tests should ask product-level questions such as whether seeded evidence can produce a Recall Result with timeline decisions, pattern insights, evidence excerpts, feedback behavior, and forget behavior.
 - Most automated tests should run against a fake Cognee adapter that records calls and returns deterministic recall data.
 - The fake adapter should verify that the workflow makes the expected memory lifecycle calls for remember, recall, improve, and forget.
@@ -105,8 +105,8 @@ The MVP centers on three submission beats:
 - Full phone integration.
 - Gmail, Amazon, Telegram, Slack, or social account OAuth.
 - User accounts, authentication, and multi-user permissions.
-- A polished mobile app.
-- A Next.js plus FastAPI architecture for the MVP.
+- A polished native mobile app.
+- Replacing the Python workflow with a JavaScript-only domain layer.
 - Public API integrations from curated API lists.
 - Production-grade screenshot OCR as a required path.
 - Complex agent frameworks.

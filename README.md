@@ -4,7 +4,7 @@ BlackOut helps you answer a very specific morning-after question:
 
 > What did I do last night?
 
-It is a small Streamlit app that reconstructs late-night digital decisions from messy evidence such as pasted receipts, messages, notes, commits, and other text traces.
+It is a small Next.js and Python app that reconstructs late-night digital decisions from messy evidence such as pasted receipts, messages, notes, commits, and other text traces.
 
 The app turns that evidence into a timeline of decisions, highlights neutral regret signals, shows repeat patterns from prior late-night windows, and gives the user controls to improve or forget memory.
 
@@ -63,7 +63,7 @@ Ask Your Memory matters because the default timeline cannot predict every questi
 
 Forgetting matters because some remembered evidence is sensitive. The MVP keeps the privacy control simple: the user forgets one whole Late-Night Window, not individual lines, so the app can remove that night cleanly and confirm what happened.
 
-The MVP uses Streamlit, Python, and Cognee so the demo can make the memory lifecycle visible:
+The MVP uses a Next.js frontend, a Python workflow/API layer, and Cognee so the demo can make the memory lifecycle visible:
 
 - Remember evidence.
 - Recall decisions and answers.
@@ -72,7 +72,7 @@ The MVP uses Streamlit, Python, and Cognee so the demo can make the memory lifec
 
 ## Hackathon Submission
 
-BlackOut is a hackathon project built with Streamlit, Python, and Cognee that makes the Cognee Memory Lifecycle visible through a late-night decision review app.
+BlackOut is a hackathon project built with Next.js, Python, and Cognee that makes the Cognee Memory Lifecycle visible through a late-night decision review app.
 
 The narrative is built around three jobs:
 
@@ -85,12 +85,13 @@ The narrative is built around three jobs:
 The fastest way to see the full product is:
 
 1. Run `python3 server.py`.
-2. Open `http://localhost:5000` and click **Load demo** — three Late-Night Windows load and Morning-After Recall runs automatically.
-3. Review the Decision timeline with timestamps, categories, regret signals, and Evidence Excerpts.
-4. Notice Pattern insights connecting current decisions to prior windows.
-5. Apply a Feedback Label (Regret, Fine, Funny, Worth it) to any Decision.
-6. Expand Ask Your Memory and ask a follow-up question.
-7. Forget the entire Late-Night Window to see privacy controls in action.
+2. In another terminal, run the Next.js frontend from `frontend/`.
+3. Open the Next.js local URL and click **Load demo** — three Late-Night Windows load and Morning-After Recall runs automatically.
+4. Review the Decision timeline with timestamps, categories, regret signals, and Evidence Excerpts.
+5. Notice Pattern insights connecting current decisions to prior windows.
+6. Apply a Feedback Label (Regret, Fine, Funny, Worth it) to any Decision.
+7. Expand Ask Your Memory and ask a follow-up question.
+8. Forget the entire Late-Night Window to see privacy controls in action.
 
 No personal accounts, phone connections, email access, shopping integrations, or OAuth are required. The demo runs entirely on pasted text evidence and the seeded dataset.
 
@@ -98,7 +99,8 @@ Screenshot and image support is a secondary evidence path planned for a future r
 
 ### Technology
 
-- **Streamlit** for the UI.
+- **Next.js** for the UI.
+- **Flask** for the thin local API server.
 - **Python** for the workflow and evidence extraction.
 - **Cognee** for the real memory adapter behind the same seam as the fake adapter used in tests and demos.
 
@@ -122,7 +124,7 @@ Optional:
 
 ## How It Works
 
-Streamlit does not own the product behavior directly. It calls `BlackOutWorkflow`, which is the main interface for product actions.
+The frontend does not own the product behavior directly. It calls API endpoints backed by `BlackOutWorkflow`, which is the main interface for product actions.
 
 The workflow talks to a memory adapter. The default adapter is fake so local demos and tests stay deterministic. A real Cognee adapter sits behind the same seam and can be enabled in configured environments.
 
@@ -159,7 +161,7 @@ Ask Your Memory appears after the Recall Result, so it stays secondary to the ma
 - Did I message anyone emotionally risky?
 - What should I cancel today?
 
-The user can also type a freeform question. Streamlit sends both suggested prompts and typed questions through `BlackOutWorkflow`, and the workflow asks the memory adapter for an answer. The fake adapter records the question for tests, finds matching remembered Decisions in the active Late-Night Window, and returns:
+The user can also type a freeform question. The frontend sends both suggested prompts and typed questions through `BlackOutWorkflow`, and the workflow asks the memory adapter for an answer. The fake adapter records the question for tests, finds matching remembered Decisions in the active Late-Night Window, and returns:
 
 - The original question.
 - A short user-facing answer.
@@ -167,7 +169,7 @@ The user can also type a freeform question. Streamlit sends both suggested promp
 
 If a Late-Night Window has been forgotten, Ask Your Memory uses the same forgotten-window state as Morning-After Recall, so deleted Evidence is not shown again in an answer.
 
-Each recalled Decision now includes Feedback Label actions. When the user marks a Decision as Regret, Fine, Funny, or Worth it, Streamlit sends that choice back through `BlackOutWorkflow`. The workflow records the label through the memory adapter and returns an updated Recall Result, so the page can keep the timeline, Pattern insights, and raw Evidence in place.
+Each recalled Decision now includes Feedback Label actions. When the user marks a Decision as Regret, Fine, Funny, or Worth it, the frontend sends that choice back through `BlackOutWorkflow`. The workflow records the label through the memory adapter and returns an updated Recall Result, so the page can keep the timeline, Pattern insights, and raw Evidence in place.
 
 The fake memory adapter records every improve-memory call for tests. It also attaches the latest Feedback Label to matching recalled Decisions. If a current Pattern insight is related to a Decision marked Regret, the insight changes from possible risk to confirmed regret. Other labels are still remembered, but they do not turn a pattern into confirmed regret.
 
@@ -179,7 +181,7 @@ The real Cognee adapter maps the visible Memory Lifecycle to Cognee calls:
 - Improve memory from Feedback Labels by adding feedback context and calling Cognee memify/improve.
 - Forget a Late-Night Window by deleting that window's Cognee dataset.
 
-The Recall Result also exposes the MVP Forget Scope: one complete Late-Night Window. After the user confirms the action, Streamlit routes the forget request through `BlackOutWorkflow`, the memory adapter forgets that window as a separable remembered unit, and the next Morning-After Recall excludes its Evidence and Decisions.
+The Recall Result also exposes the MVP Forget Scope: one complete Late-Night Window. After the user confirms the action, the frontend routes the forget request through `BlackOutWorkflow`, the memory adapter forgets that window as a separable remembered unit, and the next Morning-After Recall excludes its Evidence and Decisions.
 
 The current extraction is intentionally narrow and demo-friendly. It reads timestamped text lines such as receipts, messages, notes, tasks, calendar entries, and commits, then turns them into the MVP Decision shape. The real Cognee adapter uses the same workflow and memory adapter seam.
 
@@ -206,7 +208,7 @@ export COGNEE_API_KEY=...
 export LLM_API_KEY=...
 ```
 
-The Streamlit app also checks `~/.bashrc` for those same `export NAME=...` lines when they are missing from the process environment. This is only a local convenience for configured development machines; the values are not printed or written into the repo.
+The API server also checks `~/.bashrc` for those same `export NAME=...` lines when they are missing from the process environment. This is only a local convenience for configured development machines; the values are not printed or written into the repo.
 
 Optional environment variables:
 
@@ -217,10 +219,31 @@ export BLACKOUT_RUN_COGNEE_SMOKE=1
 
 `COGNEE_API_KEY` and `LLM_API_KEY` are read from the environment only. Do not put secret values in tracked files.
 
-Run the Flask app:
+Run the API server:
 
 ```bash
 python3 server.py
+```
+
+Run the Next.js frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:3000` after both servers are running.
+
+The Next.js dev server proxies `/api/*` to `http://127.0.0.1:5000` by default. Set `BLACKOUT_API_BASE_URL` before `npm run dev` to point the frontend at a different API server.
+
+Validate the frontend:
+
+```bash
+cd frontend
+npm run build
+npm run lint
+npx tsc --noEmit
 ```
 
 Run tests:

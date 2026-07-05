@@ -13,35 +13,32 @@ def client():
 
 
 class TestHTMLPage:
-    """Tests for the Flask-served HTML page content."""
+    """Tests for the Flask API service boundary."""
 
-    def test_welcome_page_contains_narrative_copy(self, client):
+    def test_root_identifies_api_service(self, client):
         resp = client.get("/")
-        html = resp.data.decode()
+        data = resp.get_json()
         assert resp.status_code == 200
-        assert "Reconstruct" in html
-        assert "Recognize" in html
-        assert "Repair" in html
+        assert data["service"] == "BlackOut API"
+        assert "Next.js" in data["ui"]
 
-    def test_welcome_page_avoids_out_of_scope_integrations(self, client):
-        resp = client.get("/")
-        html = resp.data.decode().lower()
+    def test_frontend_source_contains_narrative_copy(self):
+        page = (Path(__file__).resolve().parent.parent / "frontend/app/page.tsx").read_text()
+        assert "Reconstruct" in page
+        assert "recognize repeat patterns" in page
+        assert "repair memory" in page
+
+    def test_frontend_copy_avoids_out_of_scope_integrations(self):
+        page = (Path(__file__).resolve().parent.parent / "frontend/app/page.tsx").read_text().lower()
         out_of_scope = ["oauth", "sign in", "connect your", "link your", "log in"]
         for phrase in out_of_scope:
-            assert phrase not in html, f"Found out-of-scope phrase: {phrase}"
+            assert phrase not in page, f"Found out-of-scope phrase: {phrase}"
 
-    def test_welcome_page_defers_screenshot_as_secondary(self, client):
-        resp = client.get("/")
-        html = resp.data.decode().lower()
-        assert "screenshot" in html
-        assert "coming soon" in html
-
-    def test_copy_avoids_shame_and_diagnosis_language(self, client):
-        resp = client.get("/")
-        html = resp.data.decode().lower()
+    def test_frontend_copy_avoids_shame_and_diagnosis_language(self):
+        page = (Path(__file__).resolve().parent.parent / "frontend/app/page.tsx").read_text().lower()
         forbidden = ["shame", "guilt", "bad decision", "mistake", "diagnosis", "patholog"]
         for word in forbidden:
-            assert word not in html, f"Found forbidden word: {word}"
+            assert word not in page, f"Found forbidden word: {word}"
 
 
 class TestAPIFlow:

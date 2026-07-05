@@ -1,4 +1,11 @@
-from flask import Flask, jsonify, render_template, request
+import sys
+from pathlib import Path
+
+from flask import Flask, jsonify, request
+
+src_path = Path(__file__).resolve().parent / "src"
+if src_path.exists():
+    sys.path.insert(0, str(src_path))
 
 from blackout.workflow import BlackOutWorkflow, FEEDBACK_LABELS
 from blackout.cognee_adapter import FakeMemoryAdapter
@@ -23,7 +30,10 @@ def decision_index(result, evidence_text: str) -> int | None:
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return jsonify({
+        "service": "BlackOut API",
+        "ui": "Run the Next.js frontend from ./frontend.",
+    })
 
 
 @app.route("/api/load-demo", methods=["POST"])
