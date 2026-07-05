@@ -92,10 +92,10 @@ def build_bookish_context_from_env(
     env: Mapping[str, str] | None = None,
 ) -> BookishContextProvider:
     configured_env = dict(env or os.environ)
-    mode = configured_env.get("BLACKOUT_BOOKISH_CONTEXT", "").lower()
-    if mode in {"public-apis", "books", "on", "1", "true"}:
-        return PublicBooksApiContextProvider()
-    return NullBookishContextProvider()
+    mode = configured_env.get("BLACKOUT_BOOKISH_CONTEXT", "public-apis").lower()
+    if mode in {"off", "none", "false", "0"}:
+        return NullBookishContextProvider()
+    return PublicBooksApiContextProvider()
 
 
 def _looks_bookish(source: str, body: str) -> bool:

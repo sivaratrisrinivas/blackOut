@@ -69,9 +69,9 @@ def test_public_books_api_context_uses_poetrydb_for_poetry_notes():
     assert supplement == "PoetryDB: Ozymandias by Percy Bysshe Shelley, 14 lines"
 
 
-def test_bookish_context_is_opt_in_from_environment():
-    assert isinstance(build_bookish_context_from_env({}), NullBookishContextProvider)
+def test_bookish_context_uses_public_apis_by_default():
+    assert isinstance(build_bookish_context_from_env({}), PublicBooksApiContextProvider)
 
-    provider = build_bookish_context_from_env({"BLACKOUT_BOOKISH_CONTEXT": "public-apis"})
+    provider = build_bookish_context_from_env({"BLACKOUT_BOOKISH_CONTEXT": "off"})
 
-    assert isinstance(provider, PublicBooksApiContextProvider)
+    assert isinstance(provider, NullBookishContextProvider)

@@ -21,9 +21,9 @@ DECISION_CATEGORIES = {
 }
 FEEDBACK_LABELS = ("Regret", "Fine", "Funny", "Worth it")
 ASK_YOUR_MEMORY_PROMPTS = (
-    "What did I buy after midnight?",
-    "Did I message anyone emotionally risky?",
-    "What should I cancel today?",
+    "What decisions did you find?",
+    "What looks worth reviewing this morning?",
+    "Which Evidence Excerpts should I inspect first?",
 )
 _EVIDENCE_LINE = re.compile(r"^(?P<timestamp>\d{2}:\d{2}) - (?P<source>[^:]+): (?P<body>.+)$")
 _AMOUNT = re.compile(r"\$\d+(?:\.\d{2})?")
@@ -240,32 +240,10 @@ class FakeMemoryAdapter:
         remembered_decisions = self._remembered_decisions()
         question_lower = question.lower()
 
-        if "buy" in question_lower or "bought" in question_lower:
-            decisions = [
-                decision
-                for decision in remembered_decisions
-                if decision.category == "purchase"
-            ]
-            return _ask_memory_result_for(question, decisions)
-
-        if "emotion" in question_lower or "message" in question_lower:
-            decisions = [
-                decision
-                for decision in remembered_decisions
-                if decision.category == "message" and decision.regret_signals
-            ]
-            return _ask_memory_result_for(question, decisions)
-
-        if "cancel" in question_lower:
-            decisions = [
-                decision
-                for decision in remembered_decisions
-                if decision.category == "subscription"
-                or any("cancel" in signal for signal in decision.regret_signals)
-            ]
-            return _ask_memory_result_for(question, decisions)
-
-        return _ask_memory_result_for(question, remembered_decisions)
+        return _ask_memory_result_for(
+            question,
+            _decisions_matching_question(question_lower, remembered_decisions),
+        )
 
     def improve_decision_memory(
         self, decision: Decision, feedback_label: FeedbackLabel
@@ -380,8 +358,12 @@ class BlackOutWorkflow:
     def morning_after_recall(self) -> RecallResult:
         return self._memory.recall_morning_after()
 
-    def suggested_ask_memory_prompts(self) -> list[str]:
-        return list(ASK_YOUR_MEMORY_PROMPTS)
+    def suggested_ask_memory_prompts(
+        self,
+        recall_result: RecallResult | None = None,
+    ) -> list[str]:
+        result = recall_result or self._memory.recall_morning_after()
+        return _ask_memory_prompts_for(result.timeline)
 
     def ask_your_memory(self, question: str) -> AskMemoryResult:
         return self._memory.ask_memory(question)
@@ -585,6 +567,83 @@ def _ask_memory_result_for(question: str, decisions: list[Decision]) -> AskMemor
         answer=" ".join(decision_summaries),
         evidence=[decision.evidence_excerpt.text for decision in decisions],
     )
+
+
+def _decisions_matching_question(
+    question_lower: str,
+    remembered_decisions: list[Decision],
+) -> list[Decision]:
+    if "buy" in question_lower or "bought" in question_lower:
+        return [
+            decision
+            for decision in remembered_decisions
+            if decision.category == "purchase"
+        ]
+
+    if "emotion" in question_lower or "message" in question_lower:
+        return [
+            decision
+            for decision in remembered_decisions
+            if decision.category == "message" and decision.regret_signals
+        ]
+
+    if "cancel" in question_lower:
+        return [
+            decision
+            for decision in remembered_decisions
+            if decision.category == "subscription"
+            or any("cancel" in signal for signal in decision.regret_signals)
+        ]
+
+    if any(word in question_lower for word in ["book", "poem", "poetry", "read"]):
+        return [
+            decision
+            for decision in remembered_decisions
+            if decision.source_type in {"book", "poetry"}
+        ]
+
+    if "plan" in question_lower or "calendar" in question_lower:
+        return [
+            decision
+            for decision in remembered_decisions
+            if decision.category == "plan"
+        ]
+
+    if "note" in question_lower:
+        return [
+            decision
+            for decision in remembered_decisions
+            if decision.category == "note"
+        ]
+
+    return remembered_decisions
+
+
+def _ask_memory_prompts_for(decisions: list[Decision]) -> list[str]:
+    prompts: list[str] = []
+    categories = {decision.category for decision in decisions}
+    source_types = {decision.source_type for decision in decisions}
+
+    if "purchase" in categories:
+        prompts.append("What did I buy after midnight?")
+    if source_types.intersection({"book", "poetry"}):
+        prompts.append("Which book or poem showed up last night?")
+    if "message" in categories:
+        prompts.append("Did I message anyone emotionally risky?")
+    if "subscription" in categories:
+        prompts.append("What should I cancel today?")
+    if "plan" in categories:
+        prompts.append("What plans did I make after midnight?")
+    if "note" in categories and len(prompts) < 3:
+        prompts.append("What notes did I leave for morning me?")
+
+    for fallback in ASK_YOUR_MEMORY_PROMPTS:
+        if len(prompts) >= 3:
+            break
+        if fallback not in prompts:
+            prompts.append(fallback)
+
+    return prompts[:3]
 
 
 def _ask_memory_sentence_for(decision: Decision) -> str:

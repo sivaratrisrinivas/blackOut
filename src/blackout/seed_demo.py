@@ -8,6 +8,7 @@ SEED_DEMO_WINDOWS = [
         "primary_demo_evidence": """Late-Night Window: Most recent late-night window
 00:38 - Notes app: "Tomorrow me should absolutely build the espresso cart."
 01:46 - Text to Maya: "I am definitely not texting Rowan again. Unless?"
+02:24 - Book note: I bought Dune for tomorrow me.
 03:12 - BeanForge receipt: espresso machine, $249.
 04:21 - Todoist: "Cancel trial subscription before it becomes a tiny monthly ghost."
 """,

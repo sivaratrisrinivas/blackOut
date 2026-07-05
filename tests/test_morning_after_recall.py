@@ -27,17 +27,26 @@ def test_morning_after_recall_reconstructs_seeded_evidence_as_a_decision_timelin
     assert [decision.timestamp for decision in result.timeline] == [
         "00:38",
         "01:46",
+        "02:24",
         "03:12",
         "04:21",
     ]
     assert [decision.category for decision in result.timeline] == [
         "note",
         "message",
+        "note",
         "purchase",
         "subscription",
     ]
 
-    purchase = result.timeline[2]
+    book_note = result.timeline[2]
+    assert book_note.summary == "Saved book note: I bought Dune for tomorrow me."
+    assert book_note.source_type == "book"
+    assert book_note.evidence_excerpt.text == (
+        "02:24 - Book note: I bought Dune for tomorrow me."
+    )
+
+    purchase = result.timeline[3]
     assert purchase.summary == "Bought espresso machine from BeanForge"
     assert purchase.source_type == "receipt"
     assert purchase.people_or_vendors == ["BeanForge"]
@@ -57,6 +66,7 @@ def test_morning_after_recall_reconstructs_seeded_evidence_as_a_decision_timelin
     assert result.raw_evidence == [
         '00:38 - Notes app: "Tomorrow me should absolutely build the espresso cart."',
         '01:46 - Text to Maya: "I am definitely not texting Rowan again. Unless?"',
+        "02:24 - Book note: I bought Dune for tomorrow me.",
         "03:12 - BeanForge receipt: espresso machine, $249.",
         '04:21 - Todoist: "Cancel trial subscription before it becomes a tiny monthly ghost."',
     ]
@@ -414,8 +424,34 @@ def test_workflow_exposes_suggested_ask_your_memory_prompts():
 
     assert prompts == [
         "What did I buy after midnight?",
-        "Did I message anyone emotionally risky?",
-        "What should I cancel today?",
+        "What decisions did you find?",
+        "What looks worth reviewing this morning?",
+    ]
+
+
+def test_workflow_suggests_ask_your_memory_prompts_from_current_recall_decisions():
+    workflow = BlackOutWorkflow(memory=FakeMemoryAdapter())
+
+    workflow.remember_evidence(
+        primary_evidence="""Late-Night Window: Pasted evidence
+Order placed: 2:13 AM
+Merchant: MoonCart
+Item: weighted blanket
+Total: $148.00
+
+Starts 4:00 AM
+Title: Review launch deck
+""",
+        current_time=datetime.fromisoformat("2026-07-04T09:30:00+05:30"),
+    )
+    result = workflow.morning_after_recall()
+
+    prompts = workflow.suggested_ask_memory_prompts(result)
+
+    assert prompts == [
+        "What did I buy after midnight?",
+        "What plans did I make after midnight?",
+        "What decisions did you find?",
     ]
 
 

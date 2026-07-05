@@ -39,13 +39,13 @@ Today, the app can:
 - Let the user apply one of four Feedback Labels to a Decision: Regret, Fine, Funny, or Worth it.
 - Improve remembered Decisions from feedback so future recall can show the user's actual judgment.
 - Let the user ask a freeform Ask Your Memory question after Morning-After Recall.
-- Offer suggested Ask Your Memory prompts for purchases after midnight, emotionally risky messages, and things to cancel today.
+- Offer suggested Ask Your Memory prompts based on the Decisions found in the current Recall Result.
 - Answer Ask Your Memory questions with plain-English answers grounded in remembered Decisions and Evidence Excerpts.
 - Forget an entire Late-Night Window after confirmation, removing that window from future recall.
 - Keep forgotten Late-Night Windows out of both Morning-After Recall and Ask Your Memory answers.
 - Keep raw Evidence behind a collapsible provenance section instead of making it the main result.
 - Normalize messy pasted Evidence such as copied receipts, chat snippets, calendar text, tasks, commits, notes, and OCR text before extracting Decisions.
-- Optionally enrich bookish Evidence with no-key public Books APIs for small context about books or poems.
+- Enrich bookish Evidence with no-key public Books APIs for small context about books or poems.
 - Run deterministically with a fake memory adapter when explicitly configured for tests and local demos.
 - Use the real Cognee memory adapter when environment variables are configured.
 
@@ -136,7 +136,7 @@ Optional:
 | Variable | Purpose |
 |---|---|
 | `BLACKOUT_COGNEE_DATASET_PREFIX` | Prefix for Cognee dataset names |
-| `BLACKOUT_BOOKISH_CONTEXT` | Optional. Set to `public-apis` to enrich book and poetry notes through Open Library and PoetryDB |
+| `BLACKOUT_BOOKISH_CONTEXT` | Optional escape hatch. Defaults to `public-apis`; set to `off` to disable Open Library and PoetryDB enrichment |
 | `BLACKOUT_RUN_COGNEE_SMOKE` | Set to `1` to run the live Cognee smoke test |
 
 ## How It Works
@@ -174,7 +174,7 @@ Before extraction, BlackOut normalizes pasted Evidence into timestamped Evidence
 
 If no recognizable time appears in the pasted Evidence, recall returns an empty Decision timeline for that window instead of crashing or inventing a timestamp.
 
-Bookish Evidence can optionally add a little fun depth. Set `BLACKOUT_BOOKISH_CONTEXT=public-apis` and BlackOut will use no-key APIs from the Public APIs Books list: Open Library for book notes and PoetryDB for poetry notes. The enrichment is best-effort and short-timeout; if an API is unavailable, BlackOut still reconstructs the Decision without the extra context.
+Bookish Evidence adds a little fun depth by default. BlackOut uses no-key APIs from the Public APIs Books list: Open Library for book notes and PoetryDB for poetry notes. The enrichment is best-effort and short-timeout; if an API is unavailable, BlackOut still reconstructs the Decision without the extra context. Set `BLACKOUT_BOOKISH_CONTEXT=off` only when you need to disable those calls.
 
 After the timeline, Morning-After Recall compares current Decisions with prior remembered Decisions. When it finds a similar category with the same person or vendor, it returns a Pattern insight with:
 
@@ -185,11 +185,13 @@ After the timeline, Morning-After Recall compares current Decisions with prior r
 
 The app shows those Pattern insights before raw Evidence. This gives the user enough context to recognize the pattern without exposing full prior transcripts by default.
 
-Ask Your Memory appears after the Recall Result, so it stays secondary to the main Morning-After Recall action. The workflow exposes three suggested prompts:
+Ask Your Memory appears after the Recall Result, so it stays secondary to the main Morning-After Recall action. The workflow exposes three suggested prompts based on the Decisions currently visible. The Seed Demo Mode includes a book note, so its prompt set includes a book/poetry question:
 
 - What did I buy after midnight?
+- Which book or poem showed up last night?
 - Did I message anyone emotionally risky?
-- What should I cancel today?
+
+Pasted Evidence gets its own prompts. A calendar-only paste, for example, asks about plans instead of showing the same purchase/message/cancel questions as the seed demo.
 
 The user can also type a freeform question. The frontend sends both suggested prompts and typed questions through `BlackOutWorkflow`, and the workflow asks the memory adapter for an answer. The fake adapter records the question for tests, finds matching remembered Decisions in the active Late-Night Window, and returns:
 

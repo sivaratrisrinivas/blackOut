@@ -12,6 +12,7 @@ from server import app as flask_app
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("BLACKOUT_MEMORY_ADAPTER", "fake")
+    monkeypatch.setenv("BLACKOUT_BOOKISH_CONTEXT", "off")
     server_module._workflow = None
     with flask_app.test_client() as c:
         c.post("/api/reset")
@@ -230,6 +231,28 @@ class TestAPIFlow:
         data = resp.get_json()
         assert data["success"] is True
         assert len(data["prompts"]) > 0
+
+    def test_ask_prompts_reflect_demo_and_pasted_evidence_paths(self, client):
+        demo_data = client.post("/api/load-demo").get_json()
+
+        client.post("/api/reset")
+        pasted_data = client.post("/api/remember", json={
+            "evidence": """Late-Night Window: Calendar-only paste
+Starts 4:00 AM
+Title: Review launch deck
+"""
+        }).get_json()
+
+        assert demo_data["prompts"] == [
+            "What did I buy after midnight?",
+            "Which book or poem showed up last night?",
+            "Did I message anyone emotionally risky?",
+        ]
+        assert pasted_data["prompts"] == [
+            "What plans did I make after midnight?",
+            "What decisions did you find?",
+            "What looks worth reviewing this morning?",
+        ]
 
     def test_forget_marks_window_as_forgotten(self, client):
         data = client.post("/api/load-demo").get_json()

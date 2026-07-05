@@ -29,6 +29,7 @@ from blackout.workflow import (
     RecallResult,
     RememberCall,
     _ask_memory_result_for,
+    _decisions_matching_question,
     _decisions_from_evidence,
     _evidence_lines,
     _pattern_insights_for,
@@ -363,32 +364,10 @@ class RealCogneeMemoryAdapter:
             )
         ]
 
-        if "buy" in question_lower or "bought" in question_lower:
-            decisions = [
-                decision
-                for decision in remembered_decisions
-                if decision.category == "purchase"
-            ]
-            return _ask_memory_result_for(question, decisions)
-
-        if "emotion" in question_lower or "message" in question_lower:
-            decisions = [
-                decision
-                for decision in remembered_decisions
-                if decision.category == "message" and decision.regret_signals
-            ]
-            return _ask_memory_result_for(question, decisions)
-
-        if "cancel" in question_lower:
-            decisions = [
-                decision
-                for decision in remembered_decisions
-                if decision.category == "subscription"
-                or any("cancel" in signal for signal in decision.regret_signals)
-            ]
-            return _ask_memory_result_for(question, decisions)
-
-        return _ask_memory_result_for(question, remembered_decisions)
+        return _ask_memory_result_for(
+            question,
+            _decisions_matching_question(question_lower, remembered_decisions),
+        )
 
     def improve_decision_memory(
         self, decision: Decision, feedback_label: FeedbackLabel

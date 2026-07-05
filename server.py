@@ -91,7 +91,7 @@ def api_load_demo():
     wf = get_workflow()
     wf.load_seed_demo_dataset()
     result = wf.morning_after_recall()
-    prompts = wf.suggested_ask_memory_prompts()
+    prompts = wf.suggested_ask_memory_prompts(result)
     return jsonify({
         "success": True,
         "recall": _serialize_recall(result),
@@ -108,7 +108,7 @@ def api_remember():
     wf = get_workflow()
     wf.remember_evidence(primary_evidence=evidence)
     result = wf.morning_after_recall()
-    prompts = wf.suggested_ask_memory_prompts()
+    prompts = wf.suggested_ask_memory_prompts(result)
     return jsonify({
         "success": True,
         "recall": _serialize_recall(result),
@@ -120,7 +120,7 @@ def api_remember():
 def api_recall():
     wf = get_workflow()
     result = wf.morning_after_recall()
-    prompts = wf.suggested_ask_memory_prompts()
+    prompts = wf.suggested_ask_memory_prompts(result)
     return jsonify({
         "success": True,
         "recall": _serialize_recall(result),
