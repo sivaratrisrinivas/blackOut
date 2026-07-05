@@ -1,5 +1,7 @@
 # BlackOut
 
+**Late-night decisions, morning clarity.**
+
 BlackOut helps you answer a very specific morning-after question:
 
 > What did I do last night?
@@ -7,6 +9,14 @@ BlackOut helps you answer a very specific morning-after question:
 It is a small Next.js and Python app that reconstructs late-night digital decisions from messy evidence such as pasted receipts, messages, notes, commits, and other text traces.
 
 The app turns that evidence into a timeline of decisions, highlights neutral regret signals, shows repeat patterns from prior late-night windows, and gives the user controls to improve or forget memory.
+
+**Related documentation**
+
+- [PRODUCT.md](./PRODUCT.md) — users, brand voice ("Calm. Clear. Non-judgmental."), product principles, and anti-references.
+- [DESIGN.md](./DESIGN.md) — night-rail / morning-workspace visual metaphor, OKLCH color tokens, typography (Fraunces serif + Inter), component states, motion (180ms ease-out-quint), and WCAG 2.2 AA details.
+- [docs/PRD.md](./docs/PRD.md) and `docs/adr/` — full product requirements and prior architecture decisions.
+- [CONTEXT.md](./CONTEXT.md) — domain language (Evidence, Decision, Late-Night Window, Morning-After Recall, Memory Lifecycle, Feedback Label, Forget Scope, etc.).
+- [AGENTS.md](./AGENTS.md) — for contributors and automated agents.
 
 ## What It Does
 
@@ -33,9 +43,9 @@ Today, the app can:
 - Load Seed Demo Mode with three prepared Late-Night Windows.
 - Remember pasted Evidence without connecting any personal accounts.
 - Reconstruct the most recent Late-Night Window into a Decision timeline.
-- Show each Decision with a timestamp, category, source type, people or vendors, amount, neutral regret signals, and an Evidence Excerpt when those details are available.
-- Compare the most recent Late-Night Window with prior remembered windows and show similar prior Decisions as Pattern insights.
-- Label Pattern insights as possible risk until the user marks a related Decision as Regret.
+- Show each Decision with a timestamp, category (icon + label), source type, people or vendors, amount, neutral regret signals, and an Evidence Excerpt when those details are available.
+- Compare the most recent Late-Night Window with prior remembered windows and show similar prior Decisions as Pattern insights (visible under the **Patterns** step).
+- Label Pattern insights as possible risk until the user marks a related Decision as Regret (becomes "confirmed regret").
 - Let the user apply one of four Feedback Labels to a Decision: Regret, Fine, Funny, or Worth it.
 - Improve remembered Decisions from feedback so future recall can show the user's actual judgment.
 - Let the user ask a freeform Ask Your Memory question after Morning-After Recall.
@@ -54,6 +64,8 @@ Today, the app can:
 Late-night digital decisions are easy to scatter across apps and hard to inspect later. A person may wake up unsure what they bought, sent, promised, subscribed to, wrote, or changed.
 
 BlackOut is meant to make that review fast and humane. It is not trying to diagnose the user or shame them. It simply helps them inspect decisions, see possible risk, notice repeats, and choose what memory should be improved or forgotten.
+
+The interface uses a deliberate night-rail (decisions made) / morning-workspace (review) split with restrained copper accent, serif voice only on key headings, and calm motion. See DESIGN.md and PRODUCT.md for the full system.
 
 The main idea is simple: show actions and commitments first, not a pile of raw text. A user should be able to scan the timeline, notice whether anything resembles a prior late-night pattern, and quickly understand what happened.
 
@@ -89,11 +101,13 @@ The fastest way to see the full product is:
 1. Run `python3 server.py`.
 2. In another terminal, run the Next.js frontend from `frontend/`.
 3. Open the Next.js local URL and click **Load demo** — three Late-Night Windows load and Morning-After Recall runs automatically.
-4. Review the Decision timeline with timestamps, categories, regret signals, and Evidence Excerpts.
-5. Notice Pattern insights connecting current decisions to prior windows.
-6. Apply a Feedback Label (Regret, Fine, Funny, Worth it) to any Decision.
-7. Expand Ask Your Memory and ask a follow-up question.
-8. Forget the entire Late-Night Window to see privacy controls in action.
+4. Review the Decision timeline (timestamps, category icons + labels, neutral regret signals, amounts, Evidence Excerpts).
+5. Apply Feedback Labels (Regret, Fine, Funny, or Worth it) to decisions. Patterns update live for Regret.
+6. Advance to the **Patterns** step to review repeat behavior insights from prior windows.
+7. Use **Ask Your Memory** (suggested prompts or freeform) for grounded follow-ups.
+8. Reach **Done** and use the two-step Forget control to remove the entire Late-Night Window.
+
+The left rail shows the current step progress, brand (Moon icon), and a theme toggle (light is primary for morning review; dark available). The workspace uses a paper-white morning surface against a warm near-black night rail — the visual metaphor for moving from the night decisions into morning clarity.
 
 No personal accounts, phone connections, email access, shopping integrations, or OAuth are required. The demo runs entirely on pasted text evidence and the seeded dataset.
 
@@ -101,10 +115,11 @@ Screenshot and image support is a secondary evidence path planned for a future r
 
 ### Technology
 
-- **Next.js** for the UI.
-- **Flask** for the thin local API server.
-- **Python** for the workflow and evidence extraction.
-- **Cognee** for the real memory adapter behind the same seam as the fake adapter used in tests and demos.
+- **Next.js 15 + React 19** (App Router, TypeScript) with a custom design system: persistent night rail + workspace, Fraunces (serif, display voice only) + Inter (neo-grotesque UI), lucide-react icons, OKLCH tokens, and full interactive states.
+- **Flask** for the thin local API server (CORS for localhost:3000).
+- **Python** (3.10+) + `src/blackout` package for the workflow, deterministic extraction/normalization, bookish enrichment (Open Library / PoetryDB), and memory adapter seam.
+- **Cognee** for the real persistent memory adapter (optional; `BLACKOUT_MEMORY_ADAPTER=fake` for tests/demos).
+- CSS variables + `prefers-reduced-motion` + WCAG 2.2 AA (4.5:1 body contrast, icon+text category encoding for color-blind safety, keyboard nav, live regions).
 
 ### What Cognee Does In BlackOut
 
@@ -322,12 +337,12 @@ NEXT_PUBLIC_BLACKOUT_API_BASE_URL=http://127.0.0.1:5000 npm run dev
 
 ### 7. Try The Product Flow
 
-1. Click **Load demo** to seed three Late-Night Windows.
-2. Review the Morning-After Recall timeline.
-3. Open Pattern insights and compare repeated behavior.
-4. Apply a Feedback Label such as Regret, Fine, Funny, or Worth it.
-5. Ask a follow-up question in Ask Your Memory.
-6. Forget the current Late-Night Window to verify the privacy path.
+1. Click **Load demo** to seed three Late-Night Windows (or paste your own evidence).
+2. Review the Decision timeline on the Recall step (with category icons, regret signals, and excerpts).
+3. Apply Feedback Labels on the Feedback step (Regret marks related patterns as "confirmed regret").
+4. Review **Patterns** for repeat behavior insights from prior windows.
+5. Ask follow-up questions in Ask Your Memory (use suggested prompts or type your own).
+6. Advance to **Done** and use the armed two-step Forget to remove the Late-Night Window.
 
 ## Validation
 
